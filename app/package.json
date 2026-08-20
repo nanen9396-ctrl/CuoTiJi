@@ -7,7 +7,8 @@
     "check:runtime": "node scripts/check-mobile-runtime.mjs",
     "update:runtime-lock": "node scripts/update-mobile-runtime-lock.mjs",
     "test:model": "node --test --test-isolation=none tests/wrongbook-model.test.mjs",
-    "test:prototype": "playwright test -c playwright.prototype.config.ts tests/prototype/home.spec.ts",
+    "test:ocr": "node --test --test-isolation=none tests/ocr.test.mjs",
+    "test:prototype": "playwright test -c playwright.prototype.config.ts",
     "test:runtime": "playwright test",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "node scripts/check-mobile-runtime.mjs",
@@ -23,7 +24,8 @@
     "@use-gesture/react": "10.3.1",
     "motion": "12.42.2",
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "tesseract.js": "7.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

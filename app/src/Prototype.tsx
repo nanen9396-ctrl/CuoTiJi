@@ -1,4 +1,14 @@
-import { useState, type ComponentType } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ComponentType,
+} from "react";
 import {
   ArchiveIcon,
   BackpackIcon,
@@ -12,13 +22,17 @@ import {
   ShuffleIcon,
 } from "@radix-ui/react-icons";
 import { FlowStack, KeyboardTextarea, MobileScroll, type FlowControls, type FlowScreen } from "./mobile";
+import type { OcrProgress } from "./ocr";
 import {
-  libraryGroups,
+  libraryGroupsWithCounts,
   makeReviewQueue,
-  reviewQuestions,
+  questionsForGroup,
   type LibraryGroup,
-  type WrongQuestion,
+  type StoredQuestion,
 } from "./wrongbook-model";
+import { addQuestion, listQuestions } from "./wrongbook-store";
+
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const icons: Record<LibraryGroup["icon"], ComponentType> = {
   graduate: ArchiveIcon,
@@ -28,15 +42,39 @@ const icons: Record<LibraryGroup["icon"], ComponentType> = {
   grid: GridIcon,
 };
 
+type WrongbookSession = {
+  questions: StoredQuestion[];
+  loadError: string;
+  saveQuestion: (question: StoredQuestion) => Promise<void>;
+};
+
+const WrongbookContext = createContext<WrongbookSession | null>(null);
+
+function useWrongbook() {
+  const session = useContext(WrongbookContext);
+  if (!session) throw new Error("WrongbookContext is missing");
+  return session;
+}
+
+function StoredImage({ image, alt, className }: { image: Blob; alt: string; className: string }) {
+  const [source, setSource] = useState("");
+
+  useEffect(() => {
+    const url = URL.createObjectURL(image);
+    setSource(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
+  return source ? <img className={className} src={source} alt={alt} draggable={false} /> : null;
+}
+
 function savedScreen(target: string, subject: string): FlowScreen {
   return {
     id: "saved",
     render: () => (
       <MobileScroll className="app-screen success-page">
         <main className="success-content">
-          <span className="success-icon" aria-hidden="true">
-            <CheckIcon />
-          </span>
+          <span className="success-icon" aria-hidden="true"><CheckIcon /></span>
           <h1>保存成功</h1>
           <p>已归档到 {target} · {subject}</p>
           <button className="primary-button" type="button" onClick={() => window.location.reload()}>
@@ -48,34 +86,40 @@ function savedScreen(target: string, subject: string): FlowScreen {
   };
 }
 
-function ReviewSession({ flow, queue }: { flow: FlowControls; queue: WrongQuestion[] }) {
+function ReviewSession({ queue }: { queue: StoredQuestion[] }) {
   const [index, setIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
   const question = queue[index];
+
+  if (!question) {
+    return <MobileScroll className="app-screen review-page"><main className="review-content empty-library">还没有可复习的错题</main></MobileScroll>;
+  }
 
   return (
     <MobileScroll className="app-screen review-page">
       <main className="review-content">
         <div className="review-meta">
           <span>第 {index + 1} / {queue.length} 题</span>
-          <span>{question.tag}</span>
+          <span>{question.subject}</span>
         </div>
         <article className="review-card">
+          <StoredImage image={question.image} alt="原题图片" className="review-image" />
           <h2>{question.prompt}</h2>
-          {showAnswer ? <p className="answer-text">正确答案：{question.answer}</p> : null}
+          {showAnswer ? (
+            <div className="answer-text">
+              <p>正确答案：{question.answer || "未填写"}</p>
+              {question.note ? <small>笔记：{question.note}</small> : null}
+            </div>
+          ) : null}
         </article>
         <div className="review-actions">
           <button className="secondary-button" type="button" onClick={() => setShowAnswer((value) => !value)}>
             {showAnswer ? "隐藏答案" : "显示答案"}
           </button>
-          <button
-            className="primary-button"
-            type="button"
-            onClick={() => {
-              setIndex((value) => (value + 1) % queue.length);
-              setShowAnswer(false);
-            }}
-          >
+          <button className="primary-button" type="button" onClick={() => {
+            setIndex((value) => (value + 1) % queue.length);
+            setShowAnswer(false);
+          }}>
             下一题
           </button>
         </div>
@@ -84,60 +128,53 @@ function ReviewSession({ flow, queue }: { flow: FlowControls; queue: WrongQuesti
   );
 }
 
-function reviewScreen(queue: WrongQuestion[]): FlowScreen {
+function reviewScreen(queue: StoredQuestion[]): FlowScreen {
   return {
     id: "review",
     headerHeight: 54,
     header: (flow) => (
       <div className="app-header app-header-light">
-        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}>
-          <ChevronLeftIcon />
-        </button>
+        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}><ChevronLeftIcon /></button>
         <h1>刷错题</h1>
         <span className="header-spacer" aria-hidden="true" />
       </div>
     ),
-    render: (flow) => <ReviewSession flow={flow} queue={queue} />,
+    render: () => <ReviewSession queue={queue} />,
   };
 }
 
 function LibraryView({ flow, group }: { flow: FlowControls; group: LibraryGroup }) {
+  const { questions } = useWrongbook();
+  const currentQuestions = questionsForGroup(questions, group.id);
+  const isEmpty = currentQuestions.length === 0;
+
   return (
     <MobileScroll className="app-screen detail-page">
       <main className="detail-content">
         <div className="detail-summary">
-          <span>{group.count} 道错题</span>
+          <span>{currentQuestions.length} 道错题</span>
           <p>按保存时间查看，或直接开始一轮复习。</p>
         </div>
         <div className="study-actions">
-          <button
-            className="secondary-button"
-            type="button"
-            onClick={() => flow.push(reviewScreen(makeReviewQueue(reviewQuestions, false)))}
-          >
+          <button className="secondary-button" type="button" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, false)))}>
             顺序刷题
           </button>
-          <button
-            className="primary-button shuffle-button"
-            type="button"
-            aria-label="乱序刷题"
-            onClick={() => flow.push(reviewScreen(makeReviewQueue(reviewQuestions, true)))}
-          >
-            <ShuffleIcon aria-hidden="true" />
-            乱序刷题
+          <button className="primary-button shuffle-button" type="button" aria-label="乱序刷题" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, true)))}>
+            <ShuffleIcon aria-hidden="true" />乱序刷题
           </button>
         </div>
-        <section className="question-list" aria-label="错题列表">
-          {reviewQuestions.map((question, index) => (
-            <article className="question-row" key={question.id}>
-              <span>{String(index + 1).padStart(2, "0")}</span>
-              <div>
-                <strong>{question.prompt}</strong>
-                <small>{question.tag}</small>
-              </div>
-            </article>
-          ))}
-        </section>
+        {isEmpty ? (
+          <p className="empty-library">还没有错题，先拍照录入一道吧</p>
+        ) : (
+          <section className="question-list" aria-label="错题列表">
+            {currentQuestions.map((question, questionIndex) => (
+              <article className="question-row" key={question.id}>
+                <span>{String(questionIndex + 1).padStart(2, "0")}</span>
+                <div><strong>{question.prompt}</strong><small>{question.subject}</small></div>
+              </article>
+            ))}
+          </section>
+        )}
       </main>
     </MobileScroll>
   );
@@ -149,9 +186,7 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
     headerHeight: 54,
     header: (flow) => (
       <div className="app-header app-header-light">
-        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}>
-          <ChevronLeftIcon />
-        </button>
+        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}><ChevronLeftIcon /></button>
         <h1>{group.title}</h1>
         <span className="header-spacer" aria-hidden="true" />
       </div>
@@ -160,178 +195,249 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
   };
 }
 
-function ConfirmQuestion({ flow }: { flow: FlowControls }) {
+function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: { flow: FlowControls; image: File; recognizedText: string; manual: boolean; emptyResult: boolean }) {
+  const { saveQuestion } = useWrongbook();
+  const [prompt, setPrompt] = useState(recognizedText);
   const [target, setTarget] = useState("考研数学");
   const [subject, setSubject] = useState("高等数学");
-  const [answer, setAnswer] = useState("2");
+  const [answer, setAnswer] = useState("");
   const [note, setNote] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!prompt.trim()) {
+      setError("请填写题目文字");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const question: StoredQuestion = {
+      id: crypto.randomUUID(),
+      prompt: prompt.trim(),
+      answer: answer.trim(),
+      target,
+      subject,
+      note: note.trim(),
+      createdAt: new Date().toISOString(),
+      image,
+    };
+    try {
+      await saveQuestion(question);
+      flow.replace(savedScreen(target, subject));
+    } catch {
+      setError("保存失败，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <MobileScroll className="app-screen confirm-page">
       <main className="confirm-content">
-        <div className="recognition-status" role="status">
-          <CheckIcon aria-hidden="true" />
-          <span>识别完成</span>
+        <div className={`recognition-status${manual ? " recognition-status-manual" : ""}`} role="status">
+          {manual ? <FileTextIcon aria-hidden="true" /> : <CheckIcon aria-hidden="true" />}
+          <span>{emptyResult ? "未识别到清晰文字，请手动录入" : manual ? "等待手动录入" : "识别完成"}</span>
         </div>
-
-        <section className="question-preview" aria-labelledby="recognized-question">
-          <span className="eyebrow">识别结果</span>
-          <h2 id="recognized-question">设函数 f(x)=x³-3x，求 f′(x) 的极值点。</h2>
-        </section>
-
+        <label className="text-field question-preview">
+          <span>识别结果</span>
+          <KeyboardTextarea aria-label="识别结果" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="输入或修正识别出的题目文字" rows={5} />
+        </label>
         <section className="form-section" aria-labelledby="target-label">
           <h3 id="target-label">考试目标</h3>
           <div className="choice-row">
-            {["考研数学", "公务员考试", "其他"].map((choice) => (
-              <button
-                key={choice}
-                type="button"
-                className="choice-chip"
-                aria-pressed={target === choice}
-                onClick={() => setTarget(choice)}
-              >
-                {choice}
-              </button>
+            {["考研数学", "公务员考试", "高中课程", "大学课程"].map((choice) => (
+              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} onClick={() => setTarget(choice)}>{choice}</button>
             ))}
           </div>
         </section>
-
         <section className="form-section" aria-labelledby="subject-label">
           <h3 id="subject-label">科目</h3>
           <div className="choice-row">
-            {["高等数学", "线性代数", "概率论"].map((choice) => (
-              <button
-                key={choice}
-                type="button"
-                className="choice-chip"
-                aria-pressed={subject === choice}
-                onClick={() => setSubject(choice)}
-              >
-                {choice}
-              </button>
+            {["高等数学", "线性代数", "概率论", "语文", "英语", "物理", "化学"].map((choice) => (
+              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => setSubject(choice)}>{choice}</button>
             ))}
           </div>
         </section>
-
         <label className="text-field">
           <span>正确答案</span>
-          <KeyboardTextarea value={answer} onChange={(event) => setAnswer(event.target.value)} rows={2} />
+          <KeyboardTextarea aria-label="正确答案" value={answer} onChange={(event) => setAnswer(event.target.value)} rows={2} />
         </label>
-
         <label className="text-field">
           <span>个人笔记</span>
-          <KeyboardTextarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="记录错误原因或解题提醒"
-            rows={3}
-          />
+          <KeyboardTextarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="记录错误原因或解题提醒" rows={3} />
         </label>
-
-        <button
-          className="primary-button"
-          type="button"
-          aria-label="保存错题"
-          onClick={() => flow.push(savedScreen(target, subject))}
-        >
-          保存错题
-        </button>
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        <button className="primary-button" type="button" aria-label="保存错题" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存错题"}</button>
       </main>
     </MobileScroll>
   );
 }
 
-const confirmScreen: FlowScreen = {
-  id: "confirm",
-  headerHeight: 54,
-  header: (flow) => (
-    <div className="app-header app-header-light">
-      <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}>
-        <ChevronLeftIcon />
-      </button>
-      <h1>确认错题</h1>
-      <span className="header-spacer" aria-hidden="true" />
-    </div>
-  ),
-  render: (flow) => <ConfirmQuestion flow={flow} />,
-};
+function confirmScreen(image: File, recognizedText: string, manual: boolean, emptyResult = false): FlowScreen {
+  return {
+    id: "confirm",
+    headerHeight: 54,
+    header: (flow) => (
+      <div className="app-header app-header-light">
+        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}><ChevronLeftIcon /></button>
+        <h1>确认错题</h1>
+        <span className="header-spacer" aria-hidden="true" />
+      </div>
+    ),
+    render: (flow) => <ConfirmQuestion flow={flow} image={image} recognizedText={recognizedText} manual={manual} emptyResult={emptyResult} />,
+  };
+}
 
-const scanScreen: FlowScreen = {
-  id: "scan",
-  headerHeight: 54,
-  header: (flow) => (
-    <div className="app-header app-header-dark">
-      <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}>
-        <ChevronLeftIcon />
-      </button>
-      <h1>拍照录入</h1>
-      <span className="header-spacer" aria-hidden="true" />
-    </div>
-  ),
-  render: (flow) => (
+type ScanTask = { abort: () => void };
+
+function ScanView({ flow, task }: { flow: FlowControls; task: ScanTask }) {
+  const cameraInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+  const [image, setImage] = useState<File | null>(null);
+  const [preview, setPreview] = useState("");
+  const [progress, setProgress] = useState<OcrProgress | null>(null);
+  const [error, setError] = useState("");
+  const [recognizing, setRecognizing] = useState(false);
+  const recognitionId = useRef(0);
+  const recognitionController = useRef<AbortController | null>(null);
+
+  const abortRecognition = useCallback(() => {
+    recognitionId.current += 1;
+    recognitionController.current?.abort();
+    recognitionController.current = null;
+  }, []);
+
+  useEffect(() => {
+    task.abort = abortRecognition;
+    return () => {
+      abortRecognition();
+      task.abort = () => {};
+    };
+  }, [abortRecognition, task]);
+
+  useEffect(() => {
+    if (!image) {
+      setPreview("");
+      return;
+    }
+    const url = URL.createObjectURL(image);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+
+  const selectImage = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    event.target.value = "";
+    if (!selected) return;
+    if (!selected.type.startsWith("image/")) {
+      setImage(null);
+      setError("请选择图片文件");
+      return;
+    }
+    if (selected.size > MAX_IMAGE_BYTES) {
+      setImage(null);
+      setError("图片不能超过 10 MB");
+      return;
+    }
+    setImage(selected);
+    setError("");
+    setProgress(null);
+  };
+
+  const startRecognition = async () => {
+    if (!image) return;
+    const requestId = recognitionId.current + 1;
+    recognitionId.current = requestId;
+    const controller = new AbortController();
+    recognitionController.current = controller;
+    setRecognizing(true);
+    setError("");
+    setProgress({ status: "准备识别", progress: 0 });
+    try {
+      const { recognizeQuestion } = await import("./ocr");
+      const text = await recognizeQuestion(image, setProgress, undefined, controller.signal);
+      if (requestId !== recognitionId.current) return;
+      flow.push(confirmScreen(image, text, !text, !text));
+    } catch (reason) {
+      if (requestId !== recognitionId.current || (reason instanceof DOMException && reason.name === "AbortError")) return;
+      setError("识别失败，请重试或手动录入");
+    } finally {
+      if (requestId === recognitionId.current) {
+        recognitionController.current = null;
+        setRecognizing(false);
+      }
+    }
+  };
+
+  return (
     <MobileScroll className="app-screen scan-page">
       <main className="scan-content">
+        <input ref={cameraInput} className="scan-input" data-testid="camera-input" type="file" accept="image/*" capture="environment" onChange={selectImage} />
+        <input ref={galleryInput} className="scan-input" data-testid="gallery-input" type="file" accept="image/*" onChange={selectImage} />
         <section className="scan-guide" aria-label="拍照区域">
-          <CameraIcon aria-hidden="true" />
-          <h2>将整道题放入画面</h2>
-          <p>请保持页面平整、文字清晰，图片与公式会随原题一起保留。</p>
+          {preview ? <img className="scan-preview" src={preview} alt="待识别题目" draggable={false} /> : (
+            <><CameraIcon aria-hidden="true" /><h2>将整道题放入画面</h2><p>请保持页面平整、文字清晰，图片与公式会随原题一起保留。</p></>
+          )}
         </section>
-        <button
-          className="scan-action"
-          type="button"
-          aria-label="模拟拍照并识别"
-          onClick={() => flow.push(confirmScreen)}
-        >
-          <CameraIcon aria-hidden="true" />
-          <span>模拟拍照并识别</span>
-        </button>
+        {error ? <p className="form-error scan-error" role="alert">{error}</p> : null}
+        {progress ? <div className="scan-progress" role="status"><span>{progress.status}</span><strong>{Math.round(progress.progress * 100)}%</strong></div> : null}
+        <div className="scan-source-actions">
+          <button className="scan-action" type="button" disabled={recognizing} onClick={() => cameraInput.current?.click()}><CameraIcon aria-hidden="true" /><span>拍照</span></button>
+          <button className="scan-action" type="button" disabled={recognizing} onClick={() => galleryInput.current?.click()}><FileTextIcon aria-hidden="true" /><span>从相册选择</span></button>
+        </div>
+        {image ? (
+          <div className="scan-actions">
+            <button className="secondary-button" type="button" disabled={recognizing} onClick={() => flow.push(confirmScreen(image, "", true))}>手动录入</button>
+            <button className="primary-button" type="button" disabled={recognizing} onClick={startRecognition}>{recognizing ? "识别中…" : "开始识别"}</button>
+          </div>
+        ) : null}
       </main>
     </MobileScroll>
-  ),
-};
+  );
+}
 
-const homeScreen: FlowScreen = {
-  id: "home",
-  render: (flow) => (
+function scanScreen(): FlowScreen {
+  const task: ScanTask = { abort: () => {} };
+  return {
+    id: "scan",
+    headerHeight: 54,
+    header: (flow) => (
+      <div className="app-header app-header-dark">
+        <button type="button" className="back-button" aria-label="返回" onClick={() => {
+          task.abort();
+          flow.pop();
+        }}><ChevronLeftIcon /></button>
+        <h1>拍照录入</h1>
+        <span className="header-spacer" aria-hidden="true" />
+      </div>
+    ),
+    render: (flow) => <ScanView flow={flow} task={task} />,
+  };
+}
+
+function HomeView({ flow }: { flow: FlowControls }) {
+  const { questions, loadError } = useWrongbook();
+  const groups = libraryGroupsWithCounts(questions);
+  return (
     <MobileScroll className="app-screen">
       <main className="home-screen">
-        <header className="home-intro">
-          <h1>错题集</h1>
-          <p>拍照录入错题，按目标与科目分类整理，高效复习</p>
-        </header>
-
-        <button
-          className="capture-button"
-          type="button"
-          aria-label="拍照录入"
-          onClick={() => flow.push(scanScreen)}
-        >
-          <span className="capture-icon" aria-hidden="true">
-            <CameraIcon />
-          </span>
+        <header className="home-intro"><h1>错题集</h1><p>拍照录入错题，按目标与科目分类整理，高效复习</p></header>
+        <button className="capture-button" type="button" aria-label="拍照录入" onClick={() => flow.push(scanScreen())}>
+          <span className="capture-icon" aria-hidden="true"><CameraIcon /></span>
           <span className="capture-divider" aria-hidden="true" />
           <span>拍照录入</span>
         </button>
-
+        {loadError ? <p className="form-error" role="alert">{loadError}</p> : null}
         <section className="library-section" aria-labelledby="library-heading">
           <h2 id="library-heading">我的题库</h2>
           <div className="library-list">
-            {libraryGroups.map((group) => {
+            {groups.map((group) => {
               const Icon = icons[group.icon];
               return (
-                <button
-                  className="library-row"
-                  type="button"
-                  key={group.id}
-                  aria-label={group.title}
-                  onClick={() => flow.push(libraryScreen(group))}
-                >
-                  <span className="library-icon" aria-hidden="true">
-                    <Icon />
-                  </span>
-                  <span className="library-copy">
-                    <strong>{group.title}</strong>
-                  </span>
+                <button className="library-row" type="button" key={group.id} aria-label={group.title} onClick={() => flow.push(libraryScreen(group))}>
+                  <span className="library-icon" aria-hidden="true"><Icon /></span>
+                  <span className="library-copy"><strong>{group.title}</strong></span>
                   <ChevronRightIcon className="library-chevron" aria-hidden="true" />
                 </button>
               );
@@ -340,9 +446,30 @@ const homeScreen: FlowScreen = {
         </section>
       </main>
     </MobileScroll>
-  ),
-};
+  );
+}
+
+const homeScreen: FlowScreen = { id: "home", render: (flow) => <HomeView flow={flow} /> };
 
 export default function Prototype() {
-  return <FlowStack initial={homeScreen} />;
+  const [questions, setQuestions] = useState<StoredQuestion[]>([]);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    listQuestions().then((stored) => {
+      if (active) setQuestions(stored.sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+    }).catch(() => {
+      if (active) setLoadError("本地题库加载失败，请刷新重试");
+    });
+    return () => { active = false; };
+  }, []);
+
+  const saveQuestion = useCallback(async (question: StoredQuestion) => {
+    await addQuestion(question);
+    setQuestions((current) => [question, ...current]);
+  }, []);
+  const session = useMemo(() => ({ questions, loadError, saveQuestion }), [questions, loadError, saveQuestion]);
+
+  return <WrongbookContext.Provider value={session}><FlowStack initial={homeScreen} /></WrongbookContext.Provider>;
 }

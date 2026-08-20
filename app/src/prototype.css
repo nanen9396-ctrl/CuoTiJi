@@ -287,6 +287,68 @@ button {
   height: 23px;
 }
 
+.scan-input {
+  display: none;
+}
+
+.scan-preview {
+  width: 100%;
+  max-height: 430px;
+  border-radius: 16px;
+  object-fit: contain;
+  background: #ffffff;
+}
+
+.scan-source-actions,
+.scan-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.scan-source-actions .scan-action {
+  min-width: 0;
+  padding: 0 12px;
+  font-size: 15px;
+}
+
+.scan-actions .primary-button,
+.scan-actions .secondary-button {
+  min-height: 54px;
+  margin-top: 0;
+}
+
+.scan-progress {
+  padding: 13px 16px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #dce7ff;
+  background: #102654;
+  font-size: 13px;
+}
+
+.scan-progress strong {
+  color: #ffffff;
+  font-size: 15px;
+}
+
+.form-error {
+  margin: 16px 0 0;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.scan-error {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  color: #ffd4d0;
+  background: #491b27;
+}
+
 .confirm-page {
   background: #f7f9fd;
 }
@@ -307,6 +369,10 @@ button {
 .recognition-status svg {
   width: 17px;
   height: 17px;
+}
+
+.recognition-status-manual {
+  color: #785b16;
 }
 
 .question-preview {
@@ -507,6 +573,12 @@ button {
   cursor: pointer;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .shuffle-button {
   display: flex;
   align-items: center;
@@ -557,6 +629,14 @@ button {
   font-size: 12px;
 }
 
+.empty-library {
+  margin: 36px 0 0;
+  color: #7a859d;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .review-meta {
   display: flex;
   justify-content: space-between;
@@ -586,6 +666,16 @@ button {
   line-height: 1.7;
 }
 
+.review-image {
+  width: 100%;
+  max-height: 220px;
+  margin-bottom: 22px;
+  border-radius: 14px;
+  display: block;
+  object-fit: contain;
+  background: #f1f4f9;
+}
+
 .answer-text {
   margin: 34px 0 0;
   padding-top: 20px;
@@ -593,6 +683,18 @@ button {
   color: #174fad;
   font-size: 17px;
   font-weight: 750;
+}
+
+.answer-text p {
+  margin: 0;
+}
+
+.answer-text small {
+  margin-top: 10px;
+  display: block;
+  color: #66738c;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 @media (max-height: 820px) {

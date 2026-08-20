@@ -33,9 +33,18 @@ No separate crop was needed: the combined 393 × 852 comparison keeps the title,
 ## Primary Interactions Tested
 
 - Open camera-first capture flow and return.
-- Simulate OCR and open manual target/subject/answer/note confirmation.
-- Save a classified wrong question and return home.
-- Open a library, start shuffled review, and reveal the answer.
+- Select camera or gallery independently, preview the chosen image, and reject invalid or oversized files.
+- Run local OCR or skip directly to editable target/subject/answer/note confirmation.
+- Save a classified wrong question, reload the page, and verify the original image and fields remain available.
+- Open a library, start shuffled review, reveal the answer, and verify empty libraries disable review actions.
+
+## Real OCR Check
+
+- Default browser Tesseract worker verified with a generated Chinese question image on 2026-08-17.
+- Source text: `求函数 x² 的导数`; recognized text: `求 函数 xz 的 导数`.
+- Chinese text recognition completed successfully. Superscript math remains an expected manual-correction case, which the editable confirmation screen supports.
+- Reproduction image: 1000 × 260 white PNG generated with Windows `System.Drawing`, 42 px Microsoft YaHei, and the source text above; loaded through the gallery input against the default `chi_sim+eng` worker.
+- The same real result was saved, the page was reloaded, the persisted row was opened in sequential review, and the original image rendered. No page exceptions or unexpected console errors occurred; Tesseract emitted eight non-fatal `Parameter not found` compatibility warnings.
 
 ## Follow-up Polish
 

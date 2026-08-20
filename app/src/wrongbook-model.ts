@@ -5,26 +5,44 @@ export type LibraryGroup = {
   count: number;
 };
 
-export type WrongQuestion = {
+export type StoredQuestion = {
   id: string;
   prompt: string;
   answer: string;
-  tag: string;
+  target: string;
+  subject: string;
+  note: string;
+  createdAt: string;
+  image: Blob;
 };
 
 export const libraryGroups: LibraryGroup[] = [
-  { id: "postgraduate-math", title: "考研数学", icon: "graduate", count: 12 },
-  { id: "civil-service", title: "公务员考试", icon: "briefcase", count: 18 },
-  { id: "high-school", title: "高中课程", icon: "school", count: 9 },
-  { id: "university", title: "大学课程", icon: "book", count: 7 },
-  { id: "all", title: "全部错题", icon: "grid", count: 46 },
+  { id: "postgraduate-math", title: "考研数学", icon: "graduate", count: 0 },
+  { id: "civil-service", title: "公务员考试", icon: "briefcase", count: 0 },
+  { id: "high-school", title: "高中课程", icon: "school", count: 0 },
+  { id: "university", title: "大学课程", icon: "book", count: 0 },
+  { id: "all", title: "全部错题", icon: "grid", count: 0 },
 ];
 
-export const reviewQuestions: WrongQuestion[] = [
-  { id: "q-1", prompt: "设函数 f(x)=x³-3x，求 f′(x) 的极值点。", answer: "2", tag: "函数与导数" },
-  { id: "q-2", prompt: "计算极限 lim(x→0) sin x / x。", answer: "1", tag: "极限" },
-  { id: "q-3", prompt: "矩阵 A 的特征值之和等于什么？", answer: "矩阵 A 的迹", tag: "线性代数" },
-];
+const groupTargets: Record<string, string> = {
+  "postgraduate-math": "考研数学",
+  "civil-service": "公务员考试",
+  "high-school": "高中课程",
+  university: "大学课程",
+};
+
+export function questionsForGroup(questions: readonly StoredQuestion[], groupId: string): StoredQuestion[] {
+  return groupId === "all"
+    ? [...questions]
+    : questions.filter(({ target }) => target === groupTargets[groupId]);
+}
+
+export function libraryGroupsWithCounts(questions: readonly StoredQuestion[]): LibraryGroup[] {
+  return libraryGroups.map((group) => ({
+    ...group,
+    count: questionsForGroup(questions, group.id).length,
+  }));
+}
 
 export function makeReviewQueue<T>(items: readonly T[], shuffled: boolean, random = Math.random): T[] {
   const queue = [...items];
