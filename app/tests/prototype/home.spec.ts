@@ -35,6 +35,14 @@ test("shows the camera-first wrong-question library home", async ({ page }) => {
   }
 });
 
+test("renders the production app without the preview device frame", async ({ page }) => {
+  await page.goto("/?shell=native");
+
+  await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
+  await expect(page.getByTestId("device-picker")).toHaveCount(0);
+  await expect(page.getByTestId("mobile-app-viewport")).toHaveCount(0);
+});
+
 test("offers separate camera and gallery inputs", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "拍照录入" }).click();

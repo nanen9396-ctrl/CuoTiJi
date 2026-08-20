@@ -252,6 +252,14 @@ button {
   inset: 0;
 }
 
+.native-app-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  --device-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 .mobile-app-viewport[data-platform="android"][data-keyboard-visible="false"] {
   bottom: var(--device-safe-area-bottom, 48px);
 }
