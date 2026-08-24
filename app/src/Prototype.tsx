@@ -21,7 +21,7 @@ import {
   ReaderIcon,
   ShuffleIcon,
 } from "@radix-ui/react-icons";
-import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, type FlowControls, type FlowScreen } from "./mobile";
+import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, type FlowControls, type FlowScreen } from "./mobile";
 import type { OcrProgress } from "./ocr";
 import {
   classifyQuestion,
@@ -216,6 +216,10 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
 
 function QuestionDetail({ flow, question }: { flow: FlowControls; question: StoredQuestion }) {
   const { editQuestion, removeQuestion } = useWrongbook();
+  const liveFlow = useFlow();
+  const detailKey = useRef(flow.current.key);
+  const isCurrent = useRef(true);
+  isCurrent.current = liveFlow.current.key === detailKey.current;
   const [prompt, setPrompt] = useState(question.prompt);
   const [answer, setAnswer] = useState(question.answer);
   const [target, setTarget] = useState(question.target);
@@ -226,14 +230,22 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => () => {
+    isCurrent.current = false;
+  }, []);
+
+  const clearFeedback = () => {
+    setStatus("");
+    setError("");
+  };
+
   const save = async () => {
+    clearFeedback();
     if (!prompt.trim()) {
       setError("请填写题目文字");
       return;
     }
     setBusy(true);
-    setError("");
-    setStatus("");
     const updated: StoredQuestion = {
       ...question,
       prompt: prompt.trim(),
@@ -256,11 +268,10 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
   const remove = async () => {
     if (!window.confirm(`确定删除“${question.prompt.slice(0, 24)}”吗？`)) return;
     setBusy(true);
-    setError("");
-    setStatus("");
+    clearFeedback();
     try {
       await removeQuestion(question.id);
-      flow.pop();
+      if (isCurrent.current) flow.pop();
     } catch {
       setError("删除失败，请重试");
       setBusy(false);
@@ -272,13 +283,19 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
       <main className="confirm-content">
         <label className="text-field question-preview">
           <span>题目文字</span>
-          <KeyboardTextarea aria-label="题目文字" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={5} />
+          <KeyboardTextarea aria-label="题目文字" value={prompt} onChange={(event) => {
+            clearFeedback();
+            setPrompt(event.target.value);
+          }} rows={5} />
         </label>
         <section className="form-section" aria-labelledby="detail-target-label">
           <h3 id="detail-target-label">考试目标</h3>
           <div className="choice-row">
             {targetChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} onClick={() => setTarget(choice)}>{choice}</button>
+              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} onClick={() => {
+                clearFeedback();
+                setTarget(choice);
+              }}>{choice}</button>
             ))}
           </div>
         </section>
@@ -286,7 +303,10 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
           <h3 id="detail-subject-label">科目</h3>
           <div className="choice-row">
             {subjectChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => setSubject(choice)}>{choice}</button>
+              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => {
+                clearFeedback();
+                setSubject(choice);
+              }}>{choice}</button>
             ))}
           </div>
         </section>
@@ -294,17 +314,26 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
           <h3 id="detail-question-type-label">题型</h3>
           <div className="choice-row">
             {questionTypes.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} onClick={() => setQuestionType(choice)}>{choice}</button>
+              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} onClick={() => {
+                clearFeedback();
+                setQuestionType(choice);
+              }}>{choice}</button>
             ))}
           </div>
         </section>
         <label className="text-field">
           <span>正确答案</span>
-          <KeyboardTextarea aria-label="正确答案" value={answer} onChange={(event) => setAnswer(event.target.value)} rows={2} />
+          <KeyboardTextarea aria-label="正确答案" value={answer} onChange={(event) => {
+            clearFeedback();
+            setAnswer(event.target.value);
+          }} rows={2} />
         </label>
         <label className="text-field">
           <span>个人笔记</span>
-          <KeyboardTextarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="记录错误原因或解题提醒" rows={3} />
+          <KeyboardTextarea value={note} onChange={(event) => {
+            clearFeedback();
+            setNote(event.target.value);
+          }} placeholder="记录错误原因或解题提醒" rows={3} />
         </label>
         {status ? <p className="recognition-status" role="status">{status}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}

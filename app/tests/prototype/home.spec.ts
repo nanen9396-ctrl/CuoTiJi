@@ -43,6 +43,75 @@ async function seedQuestion(page: Page, overrides: Record<string, string>) {
   }, overrides);
 }
 
+async function installControlledStoreWrite(page: Page) {
+  await page.evaluate(() => {
+    const originalOpen = indexedDB.open;
+    const events: string[] = [];
+    const openRequest: Record<string, unknown> = {};
+    const writeRequest: Record<string, unknown> = {};
+    const transaction: Record<string, unknown> = {
+      error: new DOMException("Quota exceeded", "QuotaExceededError"),
+      objectStore: () => ({
+        put: () => startWrite("put"),
+        delete: () => startWrite("delete"),
+      }),
+    };
+    const startWrite = (method: string) => {
+      events.push(method);
+      queueMicrotask(() => {
+        events.push("request-success");
+        (writeRequest.onsuccess as (() => void) | undefined)?.();
+      });
+      return writeRequest;
+    };
+    const restore = () => Object.defineProperty(indexedDB, "open", { configurable: true, value: originalOpen });
+    const control = {
+      events,
+      complete: () => {
+        events.push("transaction-complete");
+        restore();
+        (transaction.oncomplete as (() => void) | undefined)?.();
+      },
+      abort: () => {
+        events.push("transaction-abort");
+        restore();
+        (transaction.onabort as (() => void) | undefined)?.();
+      },
+    };
+    (window as typeof window & { __storeWriteControl?: typeof control }).__storeWriteControl = control;
+    Object.defineProperty(indexedDB, "open", {
+      configurable: true,
+      value: () => {
+        events.push("open");
+        queueMicrotask(() => {
+          openRequest.result = {
+            close: () => events.push("close"),
+            transaction: () => transaction,
+          };
+          (openRequest.onsuccess as (() => void) | undefined)?.();
+        });
+        return openRequest;
+      },
+    });
+  });
+}
+
+async function controlledStoreEvents(page: Page) {
+  return page.evaluate(() => (
+    window as typeof window & { __storeWriteControl?: { events: string[] } }
+  ).__storeWriteControl?.events ?? []);
+}
+
+async function settleControlledStoreWrite(page: Page, result: "complete" | "abort") {
+  await page.evaluate((settlement) => {
+    const control = (
+      window as typeof window & { __storeWriteControl?: { complete: () => void; abort: () => void } }
+    ).__storeWriteControl;
+    if (!control) throw new Error("Controlled store write is not installed");
+    control[settlement]();
+  }, result);
+}
+
 test("shows the camera-first wrong-question library home", async ({ page }) => {
   await page.goto("/");
 
@@ -141,20 +210,39 @@ test("disables review actions for an empty library", async ({ page }) => {
 });
 
 test("searches every approved question field within the current library", async ({ page }) => {
-  await seedQuestion(page, { id: "matrix", prompt: "矩阵题", note: "特征值易错", subject: "线性代数" });
-  await seedQuestion(page, { id: "physics", prompt: "小球运动", answer: "速度为 2", target: "高中课程", subject: "物理" });
+  const cases = [
+    { prompt: "题干字段", query: "mixedcase", values: { prompt: "题干字段 MIXEDCASE" } },
+    { prompt: "答案字段", query: "答案唯一词", values: { answer: "答案唯一词" } },
+    { prompt: "笔记字段", query: "笔记唯一词", values: { note: "笔记唯一词" } },
+    { prompt: "目标字段", query: "考研数学", values: {} },
+    { prompt: "科目字段", query: "线性代数", values: { subject: "线性代数" } },
+    { prompt: "题型字段", query: "证明题", values: { questionType: "证明题" } },
+  ];
+  for (const [index, searchCase] of cases.entries()) {
+    await seedQuestion(page, { id: `search-${index}`, prompt: searchCase.prompt, ...searchCase.values });
+  }
+  await seedQuestion(page, { id: "id-secret-needle", prompt: "不可搜索元数据", createdAt: "2099-created-secret" });
+  await seedQuestion(page, { id: "excluded-group", prompt: "跨组唯一词", target: "高中课程" });
   await page.reload();
-  await page.getByRole("button", { name: "全部错题" }).click();
-  await page.getByRole("searchbox", { name: "搜索错题" }).fill("特征值");
-  await expect(page.getByRole("button", { name: /矩阵题/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /小球运动/ })).toHaveCount(0);
-  await page.getByRole("searchbox", { name: "搜索错题" }).fill("物理");
-  await expect(page.getByRole("button", { name: /小球运动/ })).toBeVisible();
+  await page.getByRole("button", { name: "考研数学" }).click();
+  const search = page.getByRole("searchbox", { name: "搜索错题" });
+  for (const searchCase of cases) {
+    await search.fill(searchCase.query);
+    await expect(page.getByRole("button", { name: new RegExp(searchCase.prompt) })).toBeVisible();
+  }
+  for (const excludedQuery of ["跨组唯一词", "id-secret-needle", "2099-created-secret"]) {
+    await search.fill(excludedQuery);
+    await expect(page.getByText("没有找到匹配的错题")).toBeVisible();
+  }
 });
 
 test("edits a question while preserving its image identity fields", async ({ page }) => {
   await seedQuestion(page, { id: "edit-me", prompt: "原题", createdAt: "2026-08-20T00:00:00.000Z" });
   await page.reload();
+  const originalImage = await page.evaluate(async () => {
+    const stored = (await (await import("/src/wrongbook-store.ts")).listQuestions())[0];
+    return { bytes: Array.from(new Uint8Array(await stored.image.arrayBuffer())), size: stored.image.size, type: stored.image.type };
+  });
   await page.getByRole("button", { name: "全部错题" }).click();
   await page.getByRole("button", { name: /原题/ }).click();
   await page.getByLabel("题目文字").fill("修改后的题目");
@@ -164,14 +252,25 @@ test("edits a question while preserving its image identity fields", async ({ pag
   await expect(page.getByRole("status")).toContainText("已保存");
   const stored = await page.evaluate(async () => {
     const stored = (await (await import("/src/wrongbook-store.ts")).listQuestions())[0];
-    return { id: stored.id, prompt: stored.prompt, createdAt: stored.createdAt, imageType: stored.image.type };
+    return {
+      id: stored.id,
+      prompt: stored.prompt,
+      createdAt: stored.createdAt,
+      image: { bytes: Array.from(new Uint8Array(await stored.image.arrayBuffer())), size: stored.image.size, type: stored.image.type },
+    };
   });
   expect(stored).toEqual({
     id: "edit-me",
     prompt: "修改后的题目",
     createdAt: "2026-08-20T00:00:00.000Z",
-    imageType: "image/png",
+    image: originalImage,
   });
+
+  await page.getByLabel("题目文字").fill("");
+  await expect(page.getByRole("status")).toHaveCount(0);
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect(page.getByRole("alert")).toHaveText("请填写题目文字");
+  await expect(page.getByRole("status")).toHaveCount(0);
 });
 
 test("requires confirmation before deleting one question", async ({ page }) => {
@@ -185,6 +284,64 @@ test("requires confirmation before deleting one question", async ({ page }) => {
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "删除错题" }).click();
   await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions()).length)).toBe(0);
+});
+
+test("does not pop the library when a delayed delete completes after leaving detail", async ({ page }) => {
+  await seedQuestion(page, { id: "slow-delete", prompt: "延迟删除题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /延迟删除题目/ }).click();
+  await installControlledStoreWrite(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await expect(page.getByRole("heading", { name: "全部错题" })).toBeVisible();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success", "transaction-complete", "close"]);
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("heading", { name: "全部错题" })).toBeVisible();
+  await expect(page.getByTestId("flow-current").getByRole("searchbox", { name: "搜索错题" })).toBeVisible();
+  await expect(page.getByTestId("flow-current").getByRole("button", { name: "拍照录入" })).toHaveCount(0);
+});
+
+test("keeps question detail open when an edit transaction aborts", async ({ page }) => {
+  await seedQuestion(page, { id: "edit-failure", prompt: "编辑失败题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /编辑失败题目/ }).click();
+  await installControlledStoreWrite(page);
+  await page.getByLabel("正确答案").fill("不应保存");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success"]);
+  await settleControlledStoreWrite(page, "abort");
+
+  await expect(page.getByRole("alert")).toHaveText("保存失败，请重试");
+  await expect(page.getByRole("heading", { name: "错题详情" })).toBeVisible();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success", "transaction-abort", "close"]);
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions())[0].answer)).toBe("");
+});
+
+test("keeps question detail open when a delete transaction aborts", async ({ page }) => {
+  await seedQuestion(page, { id: "delete-failure", prompt: "删除失败题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /删除失败题目/ }).click();
+  await installControlledStoreWrite(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success"]);
+  await settleControlledStoreWrite(page, "abort");
+
+  await expect(page.getByRole("alert")).toHaveText("删除失败，请重试");
+  await expect(page.getByRole("heading", { name: "错题详情" })).toBeVisible();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success", "transaction-abort", "close"]);
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions())[0].id)).toBe("delete-failure");
 });
 
 test("shows OCR progress and opens the recognized text for correction", async ({ page }) => {
