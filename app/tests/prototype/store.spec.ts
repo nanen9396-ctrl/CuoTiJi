@@ -128,6 +128,107 @@ test("updates, deletes, and clears only after durable transactions", async ({ pa
   expect(result).toEqual({ afterDelete: [{ id: "one", answer: "更新后的答案" }], finalCount: 0 });
 });
 
+test("rejects update, delete, and clear when transactions abort after their requests succeed", async ({ page }) => {
+  await page.goto("/");
+  const results = await page.evaluate(async () => {
+    const store = await import(`/src/wrongbook-store.ts?write-aborts=${Date.now()}`);
+    const originalOpen = indexedDB.open;
+    const operations = [
+      { api: "updateQuestion", method: "put" },
+      { api: "deleteQuestion", method: "delete" },
+      { api: "clearQuestions", method: "clear" },
+    ] as const;
+    const question = {
+      id: "write-abort",
+      prompt: "不应成功",
+      answer: "",
+      target: "考研数学",
+      subject: "高等数学",
+      questionType: "解答题" as const,
+      note: "",
+      createdAt: "2026-08-24T00:00:00.000Z",
+      image: new Blob(["image"], { type: "image/png" }),
+    };
+
+    return Promise.all(operations.map(async ({ api, method }) => {
+      const openRequest: Record<string, unknown> = {};
+      const writeRequest: Record<string, unknown> = {};
+      const events: string[] = [];
+      const makeWriteRequest = (calledMethod: string) => {
+        events.push(calledMethod);
+        queueMicrotask(() => {
+          events.push("request-success");
+          (writeRequest.onsuccess as (() => void) | undefined)?.();
+          setTimeout(() => {
+            events.push("transaction-abort");
+            (transaction.onabort as (() => void) | undefined)?.();
+          }, 0);
+        });
+        return writeRequest;
+      };
+      const transaction: Record<string, unknown> = {
+        error: new DOMException("Quota exceeded", "QuotaExceededError"),
+        objectStore: () => ({
+          put: () => makeWriteRequest("put"),
+          delete: () => makeWriteRequest("delete"),
+          clear: () => makeWriteRequest("clear"),
+        }),
+      };
+      Object.defineProperty(indexedDB, "open", {
+        configurable: true,
+        value: () => {
+          queueMicrotask(() => {
+            openRequest.result = { close: () => {}, transaction: () => transaction };
+            (openRequest.onsuccess as (() => void) | undefined)?.();
+          });
+          return openRequest;
+        },
+      });
+
+      try {
+        if (api === "updateQuestion") await store.updateQuestion(question);
+        if (api === "deleteQuestion") await store.deleteQuestion(question.id);
+        if (api === "clearQuestions") await store.clearQuestions();
+        return { api, method, events, errorName: "none", errorMessage: "" };
+      } catch (error) {
+        return {
+          api,
+          method,
+          events,
+          errorName: error instanceof DOMException ? error.name : "unexpected",
+          errorMessage: error instanceof DOMException ? error.message : String(error),
+        };
+      } finally {
+        Object.defineProperty(indexedDB, "open", { configurable: true, value: originalOpen });
+      }
+    }));
+  });
+
+  expect(results).toEqual([
+    {
+      api: "updateQuestion",
+      method: "put",
+      events: ["put", "request-success", "transaction-abort"],
+      errorName: "QuotaExceededError",
+      errorMessage: "Quota exceeded",
+    },
+    {
+      api: "deleteQuestion",
+      method: "delete",
+      events: ["delete", "request-success", "transaction-abort"],
+      errorName: "QuotaExceededError",
+      errorMessage: "Quota exceeded",
+    },
+    {
+      api: "clearQuestions",
+      method: "clear",
+      events: ["clear", "request-success", "transaction-abort"],
+      errorName: "QuotaExceededError",
+      errorMessage: "Quota exceeded",
+    },
+  ]);
+});
+
 test("imports atomically and skips every duplicate ID", async ({ page }) => {
   await page.goto("/");
   const result = await page.evaluate(async () => {
