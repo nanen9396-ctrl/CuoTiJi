@@ -554,6 +554,23 @@ button {
   gap: 12px;
 }
 
+.library-search {
+  width: 100%;
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid #dde4f0;
+  border-radius: 14px;
+  box-sizing: border-box;
+  color: #15213b;
+  background: #ffffff;
+  font: inherit;
+}
+
+.library-search:focus {
+  outline: 3px solid rgba(36, 100, 235, 0.16);
+  border-color: #2464eb;
+}
+
 .study-actions .primary-button,
 .study-actions .secondary-button,
 .review-actions .primary-button,
@@ -606,6 +623,17 @@ button {
   box-sizing: border-box;
 }
 
+button.question-row {
+  width: 100%;
+  border-top: 0;
+  border-right: 0;
+  border-left: 0;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
 .question-row > span {
   color: #2464eb;
   font-size: 12px;
@@ -627,6 +655,12 @@ button {
 .question-row small {
   color: #8a95aa;
   font-size: 12px;
+}
+
+.delete-question-button {
+  width: 100%;
+  margin-top: 12px;
+  color: #b42318;
 }
 
 .empty-library {

@@ -24,6 +24,25 @@ async function openManualEntry(page: Page) {
   await page.getByRole("button", { name: "手动录入" }).click();
 }
 
+async function seedQuestion(page: Page, overrides: Record<string, string>) {
+  await page.goto("/");
+  await page.evaluate(async (values) => {
+    const store = await import("/src/wrongbook-store.ts");
+    await store.addQuestion({
+      id: values.id,
+      prompt: values.prompt,
+      answer: "",
+      target: "考研数学",
+      subject: "高等数学",
+      questionType: "解答题",
+      note: "",
+      createdAt: "2026-08-24T00:00:00.000Z",
+      image: new Blob([values.id], { type: "image/png" }),
+      ...values,
+    });
+  }, overrides);
+}
+
 test("shows the camera-first wrong-question library home", async ({ page }) => {
   await page.goto("/");
 
@@ -119,6 +138,53 @@ test("disables review actions for an empty library", async ({ page }) => {
   await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
   await expect(page.getByRole("button", { name: "顺序刷题" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "乱序刷题" })).toBeDisabled();
+});
+
+test("searches every approved question field within the current library", async ({ page }) => {
+  await seedQuestion(page, { id: "matrix", prompt: "矩阵题", note: "特征值易错", subject: "线性代数" });
+  await seedQuestion(page, { id: "physics", prompt: "小球运动", answer: "速度为 2", target: "高中课程", subject: "物理" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("searchbox", { name: "搜索错题" }).fill("特征值");
+  await expect(page.getByRole("button", { name: /矩阵题/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /小球运动/ })).toHaveCount(0);
+  await page.getByRole("searchbox", { name: "搜索错题" }).fill("物理");
+  await expect(page.getByRole("button", { name: /小球运动/ })).toBeVisible();
+});
+
+test("edits a question while preserving its image identity fields", async ({ page }) => {
+  await seedQuestion(page, { id: "edit-me", prompt: "原题", createdAt: "2026-08-20T00:00:00.000Z" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /原题/ }).click();
+  await page.getByLabel("题目文字").fill("修改后的题目");
+  await page.getByLabel("正确答案").fill("修改后的答案");
+  await page.getByRole("button", { name: "线性代数", exact: true }).click();
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect(page.getByRole("status")).toContainText("已保存");
+  const stored = await page.evaluate(async () => {
+    const stored = (await (await import("/src/wrongbook-store.ts")).listQuestions())[0];
+    return { id: stored.id, prompt: stored.prompt, createdAt: stored.createdAt, imageType: stored.image.type };
+  });
+  expect(stored).toEqual({
+    id: "edit-me",
+    prompt: "修改后的题目",
+    createdAt: "2026-08-20T00:00:00.000Z",
+    imageType: "image/png",
+  });
+});
+
+test("requires confirmation before deleting one question", async ({ page }) => {
+  await seedQuestion(page, { id: "delete-me", prompt: "待删除题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /待删除题目/ }).click();
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect(page.getByRole("heading", { name: "错题详情" })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
 });
 
 test("shows OCR progress and opens the recognized text for correction", async ({ page }) => {
