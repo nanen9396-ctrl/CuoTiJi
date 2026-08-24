@@ -1,7 +1,9 @@
 # Wrongbook Data Management Design
 
-**Date:** 2026-08-24  
-**Status:** Approved for implementation planning  
+**Date:** 2026-08-24
+
+**Status:** Approved for implementation planning
+
 **Scope:** Local search, edit, delete, full backup import/export, and clear-all operations.
 
 ## Goal
