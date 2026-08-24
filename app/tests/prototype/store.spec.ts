@@ -165,15 +165,18 @@ test("imports atomically and skips every duplicate ID", async ({ page }) => {
 
 test("rejects when a batch import transaction aborts", async ({ page }) => {
   await page.goto("/");
-  const rejected = await page.evaluate(async () => {
+  const result = await page.evaluate(async () => {
     const store = await import(`/src/wrongbook-store.ts?batch-abort=${Date.now()}`);
     const openRequest: Record<string, unknown> = {};
     const keysRequest: Record<string, unknown> = {};
     const addRequest: Record<string, unknown> = {};
+    let getAllKeysCalled = false;
+    let addCalled = false;
     const transaction: Record<string, unknown> = {
       error: new DOMException("Quota exceeded", "QuotaExceededError"),
       objectStore: () => ({
         getAllKeys: () => {
+          getAllKeysCalled = true;
           queueMicrotask(() => {
             keysRequest.result = [];
             (keysRequest.onsuccess as (() => void) | undefined)?.();
@@ -181,6 +184,7 @@ test("rejects when a batch import transaction aborts", async ({ page }) => {
           return keysRequest;
         },
         add: () => {
+          addCalled = true;
           queueMicrotask(() => {
             (addRequest.onsuccess as (() => void) | undefined)?.();
             setTimeout(() => (transaction.onabort as (() => void) | undefined)?.(), 0);
@@ -212,12 +216,22 @@ test("rejects when a batch import transaction aborts", async ({ page }) => {
         createdAt: "2026-08-24T00:00:00.000Z",
         image: new Blob(["image"], { type: "image/png" }),
       }]);
-      return false;
-    } catch {
-      return true;
+      return { getAllKeysCalled, addCalled, errorName: "none", errorMessage: "" };
+    } catch (error) {
+      return {
+        getAllKeysCalled,
+        addCalled,
+        errorName: error instanceof DOMException ? error.name : "unexpected",
+        errorMessage: error instanceof DOMException ? error.message : String(error),
+      };
     } finally {
       Object.defineProperty(indexedDB, "open", { configurable: true, value: originalOpen });
     }
   });
-  expect(rejected).toBe(true);
+  expect(result).toEqual({
+    getAllKeysCalled: true,
+    addCalled: true,
+    errorName: "QuotaExceededError",
+    errorMessage: "Quota exceeded",
+  });
 });
