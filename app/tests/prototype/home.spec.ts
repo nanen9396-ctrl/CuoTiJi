@@ -49,14 +49,18 @@ async function installControlledStoreWrite(page: Page) {
     const events: string[] = [];
     const openRequest: Record<string, unknown> = {};
     const writeRequest: Record<string, unknown> = {};
+    let writeMethod = "";
+    let writeValue: unknown;
     const transaction: Record<string, unknown> = {
       error: new DOMException("Quota exceeded", "QuotaExceededError"),
       objectStore: () => ({
-        put: () => startWrite("put"),
-        delete: () => startWrite("delete"),
+        put: (value: unknown) => startWrite("put", value),
+        delete: (value: unknown) => startWrite("delete", value),
       }),
     };
-    const startWrite = (method: string) => {
+    const startWrite = (method: string, value: unknown) => {
+      writeMethod = method;
+      writeValue = value;
       events.push(method);
       queueMicrotask(() => {
         events.push("request-success");
@@ -67,9 +71,12 @@ async function installControlledStoreWrite(page: Page) {
     const restore = () => Object.defineProperty(indexedDB, "open", { configurable: true, value: originalOpen });
     const control = {
       events,
-      complete: () => {
-        events.push("transaction-complete");
+      complete: async () => {
         restore();
+        const store = await import("/src/wrongbook-store.ts");
+        if (writeMethod === "put") await store.updateQuestion(writeValue as Parameters<typeof store.updateQuestion>[0]);
+        if (writeMethod === "delete") await store.deleteQuestion(writeValue as string);
+        events.push("transaction-complete");
         (transaction.oncomplete as (() => void) | undefined)?.();
       },
       abort: () => {
@@ -103,12 +110,12 @@ async function controlledStoreEvents(page: Page) {
 }
 
 async function settleControlledStoreWrite(page: Page, result: "complete" | "abort") {
-  await page.evaluate((settlement) => {
+  await page.evaluate(async (settlement) => {
     const control = (
-      window as typeof window & { __storeWriteControl?: { complete: () => void; abort: () => void } }
+      window as typeof window & { __storeWriteControl?: { complete: () => Promise<void>; abort: () => void } }
     ).__storeWriteControl;
     if (!control) throw new Error("Controlled store write is not installed");
-    control[settlement]();
+    await control[settlement]();
   }, result);
 }
 
@@ -308,6 +315,62 @@ test("does not pop the library when a delayed delete completes after leaving det
   await expect(page.getByRole("heading", { name: "全部错题" })).toBeVisible();
   await expect(page.getByTestId("flow-current").getByRole("searchbox", { name: "搜索错题" })).toBeVisible();
   await expect(page.getByTestId("flow-current").getByRole("button", { name: "拍照录入" })).toHaveCount(0);
+});
+
+test("closes a reopened detail when its delayed delete completes", async ({ page }) => {
+  await seedQuestion(page, { id: "reopened-delete", prompt: "重开后删除题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /重开后删除题目/ }).click();
+  await installControlledStoreWrite(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: /重开后删除题目/ }).click();
+  await expect(page.getByRole("heading", { name: "错题详情" })).toBeVisible();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success", "transaction-complete", "close"]);
+  await expect(page.getByTestId("flow-current").getByRole("searchbox", { name: "搜索错题" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions()).length)).toBe(0);
+});
+
+test("locks editable detail controls until a delayed save is durable", async ({ page }) => {
+  await seedQuestion(page, { id: "slow-save", prompt: "保存前题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /保存前题目/ }).click();
+  await installControlledStoreWrite(page);
+  await page.getByLabel("题目文字").fill("保存后题目");
+  await page.getByLabel("正确答案").fill("一致答案");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success"]);
+
+  const current = page.getByTestId("flow-current");
+  for (const field of [current.getByLabel("题目文字"), current.getByLabel("正确答案"), current.getByPlaceholder("记录错误原因或解题提醒")]) {
+    await expect(field).toBeDisabled();
+  }
+  const chips = current.locator("button.choice-chip");
+  await expect(chips).toHaveCount(17);
+  for (let index = 0; index < 17; index += 1) await expect(chips.nth(index)).toBeDisabled();
+  await expect(current.getByRole("button", { name: "处理中…" })).toBeDisabled();
+  await expect(current.getByRole("button", { name: "删除错题" })).toBeDisabled();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect(page.getByRole("status")).toHaveText("已保存");
+  await expect(current.getByLabel("题目文字")).toBeEnabled();
+  await expect(current.getByRole("button", { name: "保存修改" })).toBeEnabled();
+  const coherent = await page.evaluate(async () => {
+    const stored = (await (await import("/src/wrongbook-store.ts")).listQuestions())[0];
+    return { prompt: stored.prompt, answer: stored.answer };
+  });
+  expect(coherent).toEqual({ prompt: "保存后题目", answer: "一致答案" });
+  await expect(current.getByLabel("题目文字")).toHaveValue(coherent.prompt);
+  await expect(current.getByLabel("正确答案")).toHaveValue(coherent.answer);
 });
 
 test("keeps question detail open when an edit transaction aborts", async ({ page }) => {

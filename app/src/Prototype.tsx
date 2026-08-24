@@ -214,12 +214,11 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
   };
 }
 
-function QuestionDetail({ flow, question }: { flow: FlowControls; question: StoredQuestion }) {
-  const { editQuestion, removeQuestion } = useWrongbook();
+function QuestionDetail({ question }: { question: StoredQuestion }) {
+  const { questions, editQuestion, removeQuestion } = useWrongbook();
   const liveFlow = useFlow();
-  const detailKey = useRef(flow.current.key);
-  const isCurrent = useRef(true);
-  isCurrent.current = liveFlow.current.key === detailKey.current;
+  const detailKey = useRef(liveFlow.current.key);
+  const questionExists = questions.some((item) => item.id === question.id);
   const [prompt, setPrompt] = useState(question.prompt);
   const [answer, setAnswer] = useState(question.answer);
   const [target, setTarget] = useState(question.target);
@@ -230,9 +229,9 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => () => {
-    isCurrent.current = false;
-  }, []);
+  useEffect(() => {
+    if (!questionExists && liveFlow.current.key === detailKey.current) liveFlow.pop();
+  }, [liveFlow, questionExists]);
 
   const clearFeedback = () => {
     setStatus("");
@@ -271,7 +270,6 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
     clearFeedback();
     try {
       await removeQuestion(question.id);
-      if (isCurrent.current) flow.pop();
     } catch {
       setError("删除失败，请重试");
       setBusy(false);
@@ -283,7 +281,7 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
       <main className="confirm-content">
         <label className="text-field question-preview">
           <span>题目文字</span>
-          <KeyboardTextarea aria-label="题目文字" value={prompt} onChange={(event) => {
+          <KeyboardTextarea aria-label="题目文字" value={prompt} disabled={busy} onChange={(event) => {
             clearFeedback();
             setPrompt(event.target.value);
           }} rows={5} />
@@ -292,7 +290,7 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
           <h3 id="detail-target-label">考试目标</h3>
           <div className="choice-row">
             {targetChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} disabled={busy} onClick={() => {
                 clearFeedback();
                 setTarget(choice);
               }}>{choice}</button>
@@ -303,7 +301,7 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
           <h3 id="detail-subject-label">科目</h3>
           <div className="choice-row">
             {subjectChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} disabled={busy} onClick={() => {
                 clearFeedback();
                 setSubject(choice);
               }}>{choice}</button>
@@ -314,7 +312,7 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
           <h3 id="detail-question-type-label">题型</h3>
           <div className="choice-row">
             {questionTypes.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} disabled={busy} onClick={() => {
                 clearFeedback();
                 setQuestionType(choice);
               }}>{choice}</button>
@@ -323,14 +321,14 @@ function QuestionDetail({ flow, question }: { flow: FlowControls; question: Stor
         </section>
         <label className="text-field">
           <span>正确答案</span>
-          <KeyboardTextarea aria-label="正确答案" value={answer} onChange={(event) => {
+          <KeyboardTextarea aria-label="正确答案" value={answer} disabled={busy} onChange={(event) => {
             clearFeedback();
             setAnswer(event.target.value);
           }} rows={2} />
         </label>
         <label className="text-field">
           <span>个人笔记</span>
-          <KeyboardTextarea value={note} onChange={(event) => {
+          <KeyboardTextarea value={note} disabled={busy} onChange={(event) => {
             clearFeedback();
             setNote(event.target.value);
           }} placeholder="记录错误原因或解题提醒" rows={3} />
@@ -355,7 +353,7 @@ function questionScreen(question: StoredQuestion): FlowScreen {
         <span className="header-spacer" aria-hidden="true" />
       </div>
     ),
-    render: (flow) => <QuestionDetail flow={flow} question={question} />,
+    render: () => <QuestionDetail question={question} />,
   };
 }
 
