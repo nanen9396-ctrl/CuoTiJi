@@ -10,7 +10,7 @@
     "test:ocr": "node --test --test-isolation=none tests/ocr.test.mjs",
     "test:prototype": "playwright test -c playwright.prototype.config.ts",
     "test:runtime": "playwright test",
-    "test:native": "node --test --test-isolation=none tests/capacitor-config.test.mjs",
+    "test:native": "pnpm run build && pnpm run prepare:native && node --test --test-isolation=none tests/capacitor-config.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "node scripts/check-mobile-runtime.mjs",
     "dev": "vite",
