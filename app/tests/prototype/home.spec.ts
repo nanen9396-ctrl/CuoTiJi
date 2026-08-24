@@ -67,16 +67,25 @@ function answerDialogs(page: Page, answers: readonly boolean[]): Promise<string[
 }
 
 async function installControlledStoreWrite(page: Page) {
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const existingKeys = (await (await import("/src/wrongbook-store.ts")).listQuestions()).map(({ id }) => id);
     const originalOpen = indexedDB.open;
     const events: string[] = [];
     const openRequest: Record<string, unknown> = {};
+    const keysRequest: Record<string, unknown> = {};
     const writeRequest: Record<string, unknown> = {};
     let writeMethod = "";
     let writeValue: unknown;
     const transaction: Record<string, unknown> = {
       error: new DOMException("Quota exceeded", "QuotaExceededError"),
       objectStore: () => ({
+        getAllKeys: () => {
+          queueMicrotask(() => {
+            keysRequest.result = existingKeys;
+            (keysRequest.onsuccess as (() => void) | undefined)?.();
+          });
+          return keysRequest;
+        },
         add: (value: unknown) => startWrite("add", value),
         put: (value: unknown) => startWrite("put", value),
         delete: (value: unknown) => startWrite("delete", value),
@@ -128,6 +137,48 @@ async function installControlledStoreWrite(page: Page) {
       },
     });
   });
+}
+
+async function installControlledQuestionLoad(page: Page) {
+  await page.addInitScript(() => {
+    const openRequest: Record<string, unknown> = {};
+    const getAllRequest: Record<string, unknown> = {};
+    const database = {
+      close: () => {},
+      transaction: () => ({ objectStore: () => ({ getAll: () => getAllRequest }) }),
+    };
+    const control = {
+      succeed: () => {
+        getAllRequest.result = [];
+        (getAllRequest.onsuccess as (() => void) | undefined)?.();
+      },
+      fail: () => {
+        getAllRequest.error = new DOMException("Load failed", "UnknownError");
+        (getAllRequest.onerror as (() => void) | undefined)?.();
+      },
+    };
+    (window as typeof window & { __questionLoadControl?: typeof control }).__questionLoadControl = control;
+    Object.defineProperty(indexedDB, "open", {
+      configurable: true,
+      value: () => {
+        queueMicrotask(() => {
+          openRequest.result = database;
+          (openRequest.onsuccess as (() => void) | undefined)?.();
+        });
+        return openRequest;
+      },
+    });
+  });
+}
+
+async function settleQuestionLoad(page: Page, result: "succeed" | "fail") {
+  await page.evaluate((settlement) => {
+    const control = (
+      window as typeof window & { __questionLoadControl?: { succeed: () => void; fail: () => void } }
+    ).__questionLoadControl;
+    if (!control) throw new Error("Controlled question load is not installed");
+    control[settlement]();
+  }, result);
 }
 
 async function controlledStoreEvents(page: Page) {
@@ -245,6 +296,159 @@ test("locks data management while a new question is awaiting transaction complet
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "add", "request-success", "transaction-complete", "close"]);
   await expect(page.getByText("当前共 1 道错题")).toBeVisible();
   await expect(management.getByRole("button", { name: "清空全部题库" })).toBeEnabled();
+});
+
+test("keeps every data action disabled until the initial question load succeeds", async ({ page }) => {
+  await installControlledQuestionLoad(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  const management = page.getByTestId("flow-current");
+  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+    await expect(management.getByRole("button", { name })).toBeDisabled();
+  }
+
+  await settleQuestionLoad(page, "succeed");
+  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+    await expect(management.getByRole("button", { name })).toBeEnabled();
+  }
+});
+
+test("keeps every data action disabled when the initial question load fails", async ({ page }) => {
+  await installControlledQuestionLoad(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await settleQuestionLoad(page, "fail");
+  const management = page.getByTestId("flow-current");
+  await expect(management.getByRole("alert")).toHaveText("本地题库加载失败，请刷新重试");
+  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+    await expect(management.getByRole("button", { name })).toBeDisabled();
+  }
+});
+
+test("uses supported Web Share for the complete backup", async ({ page }) => {
+  await seedQuestion(page, { id: "share-me", prompt: "分享备份题目" });
+  await page.addInitScript(() => {
+    const trace: { canShareCalls: number; shares: { title: string; name: string; type: string; text: string }[] } = { canShareCalls: 0, shares: [] };
+    (window as typeof window & { __shareTrace?: typeof trace }).__shareTrace = trace;
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => { trace.canShareCalls += 1; return true; } });
+    Object.defineProperty(navigator, "share", { configurable: true, value: async (data: ShareData) => {
+      const file = data.files?.[0];
+      if (!file) throw new Error("Missing backup file");
+      trace.shares.push({ title: data.title ?? "", name: file.name, type: file.type, text: await file.text() });
+    } });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await expect(page.getByRole("status")).toHaveText("备份已导出");
+  const trace = await page.evaluate(() => (window as typeof window & { __shareTrace?: { canShareCalls: number; shares: { title: string; name: string; type: string; text: string }[] } }).__shareTrace);
+  expect(trace?.canShareCalls).toBe(1);
+  expect(trace?.shares).toHaveLength(1);
+  expect(trace?.shares[0]).toMatchObject({ title: "错题集完整备份", type: "application/json" });
+  expect(trace?.shares[0].name).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+  expect(JSON.parse(trace?.shares[0].text ?? "{}").questions[0]).toMatchObject({ id: "share-me", image: { type: "image/png" } });
+});
+
+test("treats an AbortError from Web Share as cancellation", async ({ page }) => {
+  await page.addInitScript(() => {
+    let calls = 0;
+    Object.defineProperty(window, "__shareCalls", { configurable: true, get: () => calls });
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+    Object.defineProperty(navigator, "share", { configurable: true, value: async () => {
+      calls += 1;
+      throw new DOMException("Share cancelled", "AbortError");
+    } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await expect(page.getByRole("button", { name: "导出完整备份" })).toBeEnabled();
+  expect(await page.evaluate(() => (window as typeof window & { __shareCalls?: number }).__shareCalls)).toBe(1);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+test("surfaces non-cancellation Web Share failures", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => true });
+    Object.defineProperty(navigator, "share", { configurable: true, value: async () => { throw new Error("系统分享失败"); } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await expect(page.getByRole("alert")).toHaveText("系统分享失败");
+  await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+test("downloads and revokes the object URL when canShare rejects files", async ({ page }) => {
+  await page.addInitScript(() => {
+    const created: string[] = [];
+    const revoked: string[] = [];
+    let shareCalls = 0;
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    const revokeObjectURL = URL.revokeObjectURL.bind(URL);
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: (blob: Blob) => {
+      const url = createObjectURL(blob);
+      created.push(url);
+      return url;
+    } });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: (url: string) => {
+      revoked.push(url);
+      revokeObjectURL(url);
+    } });
+    Object.defineProperty(navigator, "canShare", { configurable: true, value: () => false });
+    Object.defineProperty(navigator, "share", { configurable: true, value: async () => { shareCalls += 1; } });
+    Object.defineProperty(window, "__fallbackTrace", { configurable: true, get: () => ({ created, revoked, shareCalls }) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出完整备份" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace)).toMatchObject({ shareCalls: 0, created: [expect.any(String)], revoked: [expect.any(String)] });
+  const trace = await page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace);
+  expect(trace?.revoked).toEqual(trace?.created);
+});
+
+test("keeps imported state unchanged when the import transaction aborts", async ({ page }) => {
+  await seedQuestion(page, { id: "import-abort-existing", prompt: "导入前题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await installControlledStoreWrite(page);
+  const document = {
+    format: "cuotiji",
+    version: 1,
+    exportedAt: "2026-08-24T00:00:00.000Z",
+    questions: [
+      { id: "import-abort-new", prompt: "不得导入", answer: "", target: "高中课程", subject: "物理", questionType: "选择题", note: "", createdAt: "2026-08-24T00:00:00.000Z", image: { type: "image/png", base64: tinyPng.toString("base64") } },
+    ],
+  };
+  await page.getByTestId("backup-input").setInputFiles({ name: "abort.cuotiji.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(document)) });
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "add", "request-success"]);
+  await settleControlledStoreWrite(page, "abort");
+  await expect(page.getByRole("alert")).toHaveText("Quota exceeded");
+  await expect(page.getByText("当前共 1 道错题")).toBeVisible();
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions()).map(({ id }) => id))).toEqual(["import-abort-existing"]);
+});
+
+test("keeps cleared state unchanged when the clear transaction aborts", async ({ page }) => {
+  await seedQuestion(page, { id: "clear-abort-existing", prompt: "清空前题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await installControlledStoreWrite(page);
+  const confirmations = answerDialogs(page, [true, true]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  await confirmations;
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "clear", "request-success"]);
+  await settleControlledStoreWrite(page, "abort");
+  await expect(page.getByRole("alert")).toHaveText("Quota exceeded");
+  await expect(page.getByText("当前共 1 道错题")).toBeVisible();
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions()).map(({ id }) => id))).toEqual(["clear-abort-existing"]);
 });
 
 test("renders the production app full-screen without visible preview chrome", async ({ page }) => {

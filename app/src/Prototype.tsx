@@ -56,6 +56,7 @@ const icons: Record<LibraryGroup["icon"], ComponentType> = {
 
 type WrongbookSession = {
   questions: StoredQuestion[];
+  loadState: "loading" | "ready" | "error";
   loadError: string;
   pendingQuestionIds: ReadonlySet<string>;
   dataMutationPending: boolean;
@@ -623,12 +624,12 @@ function scanScreen(): FlowScreen {
 }
 
 function DataManagement() {
-  const { questions, pendingQuestionIds, dataMutationPending, importQuestionBatch, clearAllQuestions } = useWrongbook();
+  const { questions, loadState, loadError, pendingQuestionIds, dataMutationPending, importQuestionBatch, clearAllQuestions } = useWrongbook();
   const fileInput = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const controlsDisabled = busy || pendingQuestionIds.size > 0 || dataMutationPending;
+  const controlsDisabled = busy || loadState !== "ready" || pendingQuestionIds.size > 0 || dataMutationPending;
 
   const clearFeedback = () => {
     setStatus("");
@@ -703,7 +704,7 @@ function DataManagement() {
     <MobileScroll className="app-screen detail-page">
       <main className="detail-content">
         <div className="detail-summary">
-          <span>当前共 {questions.length} 道错题</span>
+          <span>{loadState === "ready" ? `当前共 ${questions.length} 道错题` : "题库数据尚未就绪"}</span>
           <p>完整备份包含原题照片和个人笔记，文件未加密，请妥善保管。</p>
         </div>
         <input ref={fileInput} className="scan-input" data-testid="backup-input" type="file" accept=".json,application/json" onChange={importBackup} />
@@ -713,7 +714,7 @@ function DataManagement() {
           <button className="danger-button" type="button" disabled={controlsDisabled} onClick={clearAll}>清空全部题库</button>
         </div>
         {status ? <p className="recognition-status" role="status">{status}</p> : null}
-        {error ? <p className="form-error" role="alert">{error}</p> : null}
+        {loadError || error ? <p className="form-error" role="alert">{loadError || error}</p> : null}
       </main>
     </MobileScroll>
   );
@@ -776,6 +777,7 @@ const homeScreen: FlowScreen = { id: "home", render: (flow) => <HomeView flow={f
 
 export default function Prototype() {
   const [questions, setQuestions] = useState<StoredQuestion[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
   const pendingQuestionMutations = useRef(new Set<string>());
   const [pendingQuestionIds, setPendingQuestionIds] = useState<ReadonlySet<string>>(new Set());
@@ -785,9 +787,15 @@ export default function Prototype() {
   useEffect(() => {
     let active = true;
     listQuestions().then((stored) => {
-      if (active) setQuestions(stored.sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+      if (active) {
+        setQuestions(stored.sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+        setLoadState("ready");
+      }
     }).catch(() => {
-      if (active) setLoadError("本地题库加载失败，请刷新重试");
+      if (active) {
+        setLoadError("本地题库加载失败，请刷新重试");
+        setLoadState("error");
+      }
     });
     return () => { active = false; };
   }, []);
@@ -840,7 +848,7 @@ export default function Prototype() {
     setDataMutationPending(false);
   }, []);
   const importQuestionBatch = useCallback(async (incoming: readonly StoredQuestion[]) => {
-    if (!beginDataMutation()) throw new Error("请等待正在进行的题目操作完成");
+    if (loadState !== "ready" || !beginDataMutation()) throw new Error("请等待题库加载或正在进行的操作完成");
     try {
       const result = await importStoredQuestions(incoming);
       setQuestions((current) => [...result.added, ...current].sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
@@ -848,19 +856,19 @@ export default function Prototype() {
     } finally {
       finishDataMutation();
     }
-  }, [beginDataMutation, finishDataMutation]);
+  }, [beginDataMutation, finishDataMutation, loadState]);
   const clearAllQuestions = useCallback(async () => {
-    if (!beginDataMutation()) throw new Error("请等待正在进行的题目操作完成");
+    if (loadState !== "ready" || !beginDataMutation()) throw new Error("请等待题库加载或正在进行的操作完成");
     try {
       await clearStoredQuestions();
       setQuestions([]);
     } finally {
       finishDataMutation();
     }
-  }, [beginDataMutation, finishDataMutation]);
+  }, [beginDataMutation, finishDataMutation, loadState]);
   const session = useMemo(
-    () => ({ questions, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions }),
-    [questions, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions],
+    () => ({ questions, loadState, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions }),
+    [questions, loadState, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions],
   );
 
   return <WrongbookContext.Provider value={session}><FlowStack initial={homeScreen} /></WrongbookContext.Provider>;
