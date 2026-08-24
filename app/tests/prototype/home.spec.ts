@@ -373,6 +373,42 @@ test("locks editable detail controls until a delayed save is durable", async ({ 
   await expect(current.getByLabel("正确答案")).toHaveValue(coherent.answer);
 });
 
+test("locks and synchronizes a reopened detail during a delayed save", async ({ page }) => {
+  await seedQuestion(page, { id: "reopened-save", prompt: "版本 A", answer: "答案 A" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /版本 A/ }).click();
+  await installControlledStoreWrite(page);
+  await page.getByLabel("题目文字").fill("版本 B");
+  await page.getByLabel("正确答案").fill("答案 B");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: /版本 A/ }).click();
+
+  const reopened = page.getByTestId("flow-current");
+  await expect(reopened.getByLabel("题目文字")).toHaveValue("版本 A");
+  await expect(reopened.getByLabel("题目文字")).toBeDisabled();
+  await expect(reopened.getByRole("button", { name: "线性代数", exact: true })).toBeDisabled();
+  await expect(reopened.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  await expect(reopened.getByRole("button", { name: "删除错题" })).toBeDisabled();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success", "transaction-complete", "close"]);
+  await expect(reopened.getByLabel("题目文字")).toHaveValue("版本 B");
+  await expect(reopened.getByLabel("正确答案")).toHaveValue("答案 B");
+  await expect(reopened.getByLabel("题目文字")).toBeEnabled();
+  await expect(reopened.getByRole("button", { name: "保存修改" })).toBeEnabled();
+  await reopened.getByRole("button", { name: "保存修改" }).click();
+  await expect(reopened.getByRole("status")).toHaveText("已保存");
+  await page.reload();
+  const durable = await page.evaluate(async () => {
+    const stored = (await (await import("/src/wrongbook-store.ts")).listQuestions())[0];
+    return { prompt: stored.prompt, answer: stored.answer };
+  });
+  expect(durable).toEqual({ prompt: "版本 B", answer: "答案 B" });
+});
+
 test("keeps question detail open when an edit transaction aborts", async ({ page }) => {
   await seedQuestion(page, { id: "edit-failure", prompt: "编辑失败题目" });
   await page.reload();
@@ -388,6 +424,12 @@ test("keeps question detail open when an edit transaction aborts", async ({ page
   await expect(page.getByRole("heading", { name: "错题详情" })).toBeVisible();
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success", "transaction-abort", "close"]);
   expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions())[0].answer)).toBe("");
+  await expect(page.getByLabel("正确答案")).toHaveValue("");
+  await expect(page.getByLabel("正确答案")).toBeEnabled();
+  await page.getByLabel("正确答案").fill("失败后可保存");
+  await page.getByRole("button", { name: "保存修改" }).click();
+  await expect(page.getByRole("status")).toHaveText("已保存");
+  expect(await page.evaluate(async () => (await (await import("/src/wrongbook-store.ts")).listQuestions())[0].answer)).toBe("失败后可保存");
 });
 
 test("keeps question detail open when a delete transaction aborts", async ({ page }) => {

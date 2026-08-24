@@ -49,6 +49,7 @@ const icons: Record<LibraryGroup["icon"], ComponentType> = {
 type WrongbookSession = {
   questions: StoredQuestion[];
   loadError: string;
+  pendingQuestionIds: ReadonlySet<string>;
   saveQuestion: (question: StoredQuestion) => Promise<void>;
   editQuestion: (question: StoredQuestion) => Promise<void>;
   removeQuestion: (id: string) => Promise<void>;
@@ -215,10 +216,12 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
 }
 
 function QuestionDetail({ question }: { question: StoredQuestion }) {
-  const { questions, editQuestion, removeQuestion } = useWrongbook();
+  const { questions, pendingQuestionIds, editQuestion, removeQuestion } = useWrongbook();
   const liveFlow = useFlow();
   const detailKey = useRef(liveFlow.current.key);
-  const questionExists = questions.some((item) => item.id === question.id);
+  const storedQuestion = questions.find((item) => item.id === question.id);
+  const questionExists = Boolean(storedQuestion);
+  const sessionBusy = pendingQuestionIds.has(question.id);
   const [prompt, setPrompt] = useState(question.prompt);
   const [answer, setAnswer] = useState(question.answer);
   const [target, setTarget] = useState(question.target);
@@ -228,10 +231,27 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [awaitingSessionSync, setAwaitingSessionSync] = useState(sessionBusy);
+  const controlsDisabled = busy || sessionBusy || awaitingSessionSync;
 
   useEffect(() => {
     if (!questionExists && liveFlow.current.key === detailKey.current) liveFlow.pop();
   }, [liveFlow, questionExists]);
+
+  useEffect(() => {
+    if (sessionBusy) {
+      setAwaitingSessionSync(true);
+      return;
+    }
+    if (!awaitingSessionSync || !storedQuestion) return;
+    setPrompt(storedQuestion.prompt);
+    setAnswer(storedQuestion.answer);
+    setTarget(storedQuestion.target);
+    setSubject(storedQuestion.subject);
+    setQuestionType(storedQuestion.questionType);
+    setNote(storedQuestion.note);
+    setAwaitingSessionSync(false);
+  }, [awaitingSessionSync, sessionBusy, storedQuestion]);
 
   const clearFeedback = () => {
     setStatus("");
@@ -239,6 +259,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
   };
 
   const save = async () => {
+    if (controlsDisabled) return;
     clearFeedback();
     if (!prompt.trim()) {
       setError("请填写题目文字");
@@ -265,6 +286,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
   };
 
   const remove = async () => {
+    if (controlsDisabled) return;
     if (!window.confirm(`确定删除“${question.prompt.slice(0, 24)}”吗？`)) return;
     setBusy(true);
     clearFeedback();
@@ -281,7 +303,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
       <main className="confirm-content">
         <label className="text-field question-preview">
           <span>题目文字</span>
-          <KeyboardTextarea aria-label="题目文字" value={prompt} disabled={busy} onChange={(event) => {
+          <KeyboardTextarea aria-label="题目文字" value={prompt} disabled={controlsDisabled} onChange={(event) => {
             clearFeedback();
             setPrompt(event.target.value);
           }} rows={5} />
@@ -290,7 +312,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
           <h3 id="detail-target-label">考试目标</h3>
           <div className="choice-row">
             {targetChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} disabled={busy} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} disabled={controlsDisabled} onClick={() => {
                 clearFeedback();
                 setTarget(choice);
               }}>{choice}</button>
@@ -301,7 +323,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
           <h3 id="detail-subject-label">科目</h3>
           <div className="choice-row">
             {subjectChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} disabled={busy} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} disabled={controlsDisabled} onClick={() => {
                 clearFeedback();
                 setSubject(choice);
               }}>{choice}</button>
@@ -312,7 +334,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
           <h3 id="detail-question-type-label">题型</h3>
           <div className="choice-row">
             {questionTypes.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} disabled={busy} onClick={() => {
+              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} disabled={controlsDisabled} onClick={() => {
                 clearFeedback();
                 setQuestionType(choice);
               }}>{choice}</button>
@@ -321,22 +343,22 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
         </section>
         <label className="text-field">
           <span>正确答案</span>
-          <KeyboardTextarea aria-label="正确答案" value={answer} disabled={busy} onChange={(event) => {
+          <KeyboardTextarea aria-label="正确答案" value={answer} disabled={controlsDisabled} onChange={(event) => {
             clearFeedback();
             setAnswer(event.target.value);
           }} rows={2} />
         </label>
         <label className="text-field">
           <span>个人笔记</span>
-          <KeyboardTextarea value={note} disabled={busy} onChange={(event) => {
+          <KeyboardTextarea value={note} disabled={controlsDisabled} onChange={(event) => {
             clearFeedback();
             setNote(event.target.value);
           }} placeholder="记录错误原因或解题提醒" rows={3} />
         </label>
         {status ? <p className="recognition-status" role="status">{status}</p> : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="primary-button" type="button" disabled={busy} onClick={save}>{busy ? "处理中…" : "保存修改"}</button>
-        <button className="secondary-button delete-question-button" type="button" disabled={busy} onClick={remove}>删除错题</button>
+        <button className="primary-button" type="button" disabled={controlsDisabled} onClick={save}>{busy ? "处理中…" : "保存修改"}</button>
+        <button className="secondary-button delete-question-button" type="button" disabled={controlsDisabled} onClick={remove}>删除错题</button>
       </main>
     </MobileScroll>
   );
@@ -627,6 +649,8 @@ const homeScreen: FlowScreen = { id: "home", render: (flow) => <HomeView flow={f
 export default function Prototype() {
   const [questions, setQuestions] = useState<StoredQuestion[]>([]);
   const [loadError, setLoadError] = useState("");
+  const pendingQuestionMutations = useRef(new Set<string>());
+  const [pendingQuestionIds, setPendingQuestionIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -642,17 +666,37 @@ export default function Prototype() {
     await addQuestion(question);
     setQuestions((current) => [question, ...current]);
   }, []);
+  const beginQuestionMutation = useCallback((id: string) => {
+    if (pendingQuestionMutations.current.has(id)) return false;
+    pendingQuestionMutations.current.add(id);
+    setPendingQuestionIds(new Set(pendingQuestionMutations.current));
+    return true;
+  }, []);
+  const finishQuestionMutation = useCallback((id: string) => {
+    pendingQuestionMutations.current.delete(id);
+    setPendingQuestionIds(new Set(pendingQuestionMutations.current));
+  }, []);
   const editQuestion = useCallback(async (question: StoredQuestion) => {
-    await updateQuestion(question);
-    setQuestions((current) => current.map((item) => item.id === question.id ? question : item));
-  }, []);
+    if (!beginQuestionMutation(question.id)) throw new Error("Question mutation already pending");
+    try {
+      await updateQuestion(question);
+      setQuestions((current) => current.map((item) => item.id === question.id ? question : item));
+    } finally {
+      finishQuestionMutation(question.id);
+    }
+  }, [beginQuestionMutation, finishQuestionMutation]);
   const removeQuestion = useCallback(async (id: string) => {
-    await deleteQuestion(id);
-    setQuestions((current) => current.filter((item) => item.id !== id));
-  }, []);
+    if (!beginQuestionMutation(id)) throw new Error("Question mutation already pending");
+    try {
+      await deleteQuestion(id);
+      setQuestions((current) => current.filter((item) => item.id !== id));
+    } finally {
+      finishQuestionMutation(id);
+    }
+  }, [beginQuestionMutation, finishQuestionMutation]);
   const session = useMemo(
-    () => ({ questions, loadError, saveQuestion, editQuestion, removeQuestion }),
-    [questions, loadError, saveQuestion, editQuestion, removeQuestion],
+    () => ({ questions, loadError, pendingQuestionIds, saveQuestion, editQuestion, removeQuestion }),
+    [questions, loadError, pendingQuestionIds, saveQuestion, editQuestion, removeQuestion],
   );
 
   return <WrongbookContext.Provider value={session}><FlowStack initial={homeScreen} /></WrongbookContext.Provider>;
