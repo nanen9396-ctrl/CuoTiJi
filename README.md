@@ -23,6 +23,17 @@ pnpm dev
 
 首次识别需要联网下载中文 OCR 模型，之后浏览器可复用缓存。题目图片与识别结果只保存在当前浏览器中，不会上传到应用服务器。单张图片须为常见图片格式且不超过 10 MB。
 
+## 原生工程
+
+项目已使用 Capacitor 8 生成 Android 与 iOS 工程，开发包名为 `com.nanen9396.cuotiji`。同步最新 Web 构建到两个原生工程：
+
+```powershell
+cd app
+pnpm run native:sync
+```
+
+使用 `pnpm run native:android` 打开 Android Studio；使用 `pnpm run native:ios` 打开 Xcode。iOS 编译、签名、模拟器和真机验证必须在安装 Xcode 的 macOS 环境完成。正式创建商店记录前需确认最终包名。
+
 ## 验证
 
 ```powershell
@@ -30,6 +41,7 @@ cd app
 pnpm run test:model
 pnpm run test:ocr
 pnpm run test:prototype
+pnpm run test:native
 pnpm run build
 pnpm run test:sites
 ```

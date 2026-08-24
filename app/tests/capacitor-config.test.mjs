@@ -1,0 +1,14 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+
+test("defines a stable Capacitor app identity and both native projects", () => {
+  const config = readFileSync(new URL("../capacitor.config.ts", import.meta.url), "utf8");
+  assert.match(config, /appId:\s*["']com\.nanen9396\.cuotiji["']/);
+  assert.match(config, /appName:\s*["']错题集["']/);
+  assert.match(config, /webDir:\s*["']dist\/native["']/);
+  assert.equal(existsSync(new URL("../android/app/build.gradle", import.meta.url)), true);
+  assert.equal(existsSync(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url)), true);
+  const nativeIndex = readFileSync(new URL("../dist/native/index.html", import.meta.url), "utf8");
+  assert.match(nativeIndex, /data-native-shell="true"/);
+});

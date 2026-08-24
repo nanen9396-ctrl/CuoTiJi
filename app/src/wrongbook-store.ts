@@ -20,7 +20,11 @@ async function database(): Promise<IDBDatabase> {
 export async function listQuestions(): Promise<StoredQuestion[]> {
   const db = await database();
   try {
-    return await requestResult(db.transaction("questions").objectStore("questions").getAll());
+    const questions = await requestResult(db.transaction("questions").objectStore("questions").getAll()) as StoredQuestion[];
+    return questions.map((question) => ({
+      ...question,
+      questionType: question.questionType ?? "解答题",
+    }));
   } finally {
     db.close();
   }

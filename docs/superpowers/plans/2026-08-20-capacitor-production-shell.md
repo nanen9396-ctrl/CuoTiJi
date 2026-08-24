@@ -2,224 +2,146 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Turn the existing framed browser prototype into a full-screen native application when it runs inside Capacitor, while preserving the desktop device preview for design QA.
+**Goal:** Package the existing React wrong-question app as Android and iOS projects while keeping the protected desktop preview runtime byte-for-byte intact.
 
-**Architecture:** Keep the React feature flow unchanged. `App.tsx` selects the full-screen `Prototype` when `Capacitor.isNativePlatform()` is true or when a browser uses `?shell=native`; ordinary browser runs continue using `MobileRuntime`. Capacitor v8 packages the same Vite `dist` output into generated Android and iOS projects.
+**Architecture:** The ordinary Vite build remains `dist/client` and continues to power the framed design preview and Sites output. A new preparation script copies that verified client build to `dist/native`, marks the copied HTML with `data-native-shell="true"`, and Capacitor packages that directory. A scoped stylesheet flattens the preview frame, hides simulated device chrome, restores native cursors and safe-area variables, and disables simulated keyboard spacing only in the native copy.
 
-**Tech Stack:** React 19, Vite 8, TypeScript 7, Playwright, Capacitor 8, Android Gradle project, iOS Xcode project.
+**Tech Stack:** React 19, Vite 8, TypeScript 7, Playwright, Capacitor 8.5.0, Android API 36, iOS Xcode project.
 
 ## Global Constraints
 
-- Keep the existing desktop preview and its protected mobile runtime unchanged.
+- `mobile-runtime.lock.json` must continue to verify all 28 protected files.
 - Use development application id `com.nanen9396.cuotiji` and app name `错题集`; confirm the final identifier before creating store records.
-- Use `dist` as Capacitor `webDir`.
-- Do not add native camera or storage plugins in this phase; the existing standards-based file inputs and IndexedDB remain functional baselines.
-- Generated native projects must be committed so later signing, privacy-manifest, and permission work has stable targets.
-- iOS source may be generated on Windows, but archive and device validation require macOS with Xcode.
+- Keep `dist/client` for Sites and use `dist/native` only for Capacitor.
+- Do not add native camera or storage plugins in this phase.
+- Generated Android and iOS source projects are committed; copied web assets and local build caches remain ignored.
+- iOS archive and real-device validation require macOS with Xcode.
 
 ---
 
-### Task 1: Select the production shell
+### Task 1: Add a scoped native presentation
 
 **Files:**
-- Modify: `app/src/App.tsx`
+- Create: `app/public/native-shell.css`
+- Modify: `app/index.html`
 - Modify: `app/tests/prototype/home.spec.ts`
 
 **Interfaces:**
-- Consumes: `Capacitor.isNativePlatform(): boolean`, browser query parameter `shell=native`.
-- Produces: a full-screen app DOM without `data-testid="device-picker"` in native mode; existing framed preview otherwise.
+- Consumes: the `data-native-shell="true"` attribute on `<html>`.
+- Produces: a full-viewport visible app with hidden preview picker, bezel, status bar, home indicator, fake keyboard, and cursor.
 
-- [ ] **Step 1: Write the failing browser test**
+- [x] **Step 1: Write the failing browser test**
 
-Append this case to `app/tests/prototype/home.spec.ts`:
+The test sets `document.documentElement.dataset.nativeShell = "true"`, expects the device picker to be hidden, and expects `phone-frame` bounds to equal the 1100 × 1100 test viewport.
 
-```ts
-test("renders the production app without the preview device frame", async ({ page }) => {
-  await page.goto("/?shell=native");
-  await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
-  await expect(page.getByTestId("device-picker")).toHaveCount(0);
-  await expect(page.getByTestId("mobile-app-viewport")).toHaveCount(0);
-});
-```
-
-- [ ] **Step 2: Run the test and verify RED**
+- [x] **Step 2: Verify RED**
 
 Run: `pnpm run test:prototype --grep "production app"`
 
-Expected: FAIL because `MobileRuntime` still renders the device picker and mobile viewport.
+Observed: FAIL because the preview device picker remained visible.
 
-- [ ] **Step 3: Implement the minimal shell switch**
+- [x] **Step 3: Implement scoped CSS**
 
-Replace `app/src/App.tsx` with:
+Link `/native-shell.css` from `index.html`. Keep every production override under `html[data-native-shell="true"]`; use `!important` only where protected runtime inline geometry or custom properties must be replaced.
 
-```tsx
-import { Capacitor } from "@capacitor/core";
-import { MobileRuntime } from "./mobile";
-import Prototype from "./Prototype";
+- [x] **Step 4: Verify GREEN**
 
-export default function App() {
-  const nativeShell = Capacitor.isNativePlatform()
-    || new URLSearchParams(window.location.search).get("shell") === "native";
+Run: `pnpm run test:prototype --grep "production app"`
 
-  return nativeShell ? <Prototype /> : <MobileRuntime><Prototype /></MobileRuntime>;
-}
-```
-
-- [ ] **Step 4: Run targeted and existing browser tests**
-
-Run: `pnpm run test:prototype`
-
-Expected: all prototype browser tests pass, including the production-shell case.
-
-- [ ] **Step 5: Commit**
-
-```powershell
-git add app/src/App.tsx app/tests/prototype/home.spec.ts
-git commit -m "feat: add full-screen production app shell"
-```
+Observed: 1 test passed.
 
 ---
 
-### Task 2: Add Capacitor platforms
+### Task 2: Generate a deterministic native build directory
+
+**Files:**
+- Create: `app/scripts/prepare-native-build.mjs`
+- Modify: `app/package.json`
+- Test: `app/tests/capacitor-config.test.mjs`
+
+**Interfaces:**
+- Consumes: `dist/client/index.html` from the verified Vite build.
+- Produces: `dist/native/index.html` with `data-native-shell="true"` and an otherwise identical client asset tree.
+
+- [x] **Step 1: Extend the failing native test**
+
+Assert that `dist/native/index.html` exists and contains `data-native-shell="true"`.
+
+- [x] **Step 2: Implement the preparation script**
+
+Resolve fixed paths from the script location, verify `dist/client/index.html`, remove only `dist/native`, recursively copy the client directory, inject the attribute, and print the resulting path.
+
+- [x] **Step 3: Add scripts**
+
+Use:
+
+```json
+"prepare:native": "node scripts/prepare-native-build.mjs",
+"native:sync": "pnpm run build && pnpm run prepare:native && cap sync"
+```
+
+- [x] **Step 4: Build and prepare**
+
+Run: `pnpm run build` followed by `pnpm run prepare:native`.
+
+Observed: protected runtime integrity passed for 28 files and `dist/native/index.html` was prepared.
+
+---
+
+### Task 3: Add Capacitor Android and iOS projects
 
 **Files:**
 - Create: `app/capacitor.config.ts`
-- Create: `app/android/**` through `pnpm exec cap add android`
-- Create: `app/ios/**` through `pnpm exec cap add ios`
+- Create: `app/android/**`
+- Create: `app/ios/**`
 - Modify: `app/package.json`
 - Modify: `app/pnpm-lock.yaml`
-- Modify: `app/.gitignore`
 - Create: `app/tests/capacitor-config.test.mjs`
 
 **Interfaces:**
-- Produces: Capacitor config `{ appId: "com.nanen9396.cuotiji", appName: "错题集", webDir: "dist" }`, `pnpm native:sync`, Android project, and iOS project.
+- Produces: `{ appId: "com.nanen9396.cuotiji", appName: "错题集", webDir: "dist/native" }`, Android API 36 project, and iOS Xcode project.
 
-- [ ] **Step 1: Write the failing configuration test**
+- [x] **Step 1: Verify RED**
 
-Create `app/tests/capacitor-config.test.mjs`:
+Run: `pnpm run test:native`.
 
-```js
-import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
-import test from "node:test";
+Observed first failure: missing `capacitor.config.ts`; observed second failure: missing native project paths.
 
-test("defines a stable Capacitor app identity and both native projects", () => {
-  const config = readFileSync(new URL("../capacitor.config.ts", import.meta.url), "utf8");
-  assert.match(config, /appId:\s*["']com\.nanen9396\.cuotiji["']/);
-  assert.match(config, /appName:\s*["']错题集["']/);
-  assert.match(config, /webDir:\s*["']dist["']/);
-  assert.equal(existsSync(new URL("../android/app/build.gradle", import.meta.url)), true);
-  assert.equal(existsSync(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url)), true);
-});
-```
+- [x] **Step 2: Install pinned Capacitor packages**
 
-- [ ] **Step 2: Run the test and verify RED**
+Install `@capacitor/core`, `@capacitor/android`, `@capacitor/ios`, and `@capacitor/cli` at `8.5.0` using the repository pnpm store.
 
-Run: `node --test tests/capacitor-config.test.mjs`
+- [x] **Step 3: Create config and platform projects**
 
-Expected: FAIL with `ENOENT` for `capacitor.config.ts`.
+Run `pnpm exec cap add android` and `pnpm exec cap add ios`, then build `dist/native` and run `pnpm exec cap sync`.
 
-- [ ] **Step 3: Install Capacitor v8 packages**
+- [x] **Step 4: Verify GREEN**
 
-Run:
+Run: `pnpm run test:native`.
 
-```powershell
-pnpm add @capacitor/core@8 @capacitor/android@8 @capacitor/ios@8
-pnpm add -D @capacitor/cli@8
-```
-
-Expected: dependencies and lockfile update successfully.
-
-- [ ] **Step 4: Create the config and scripts**
-
-Create `app/capacitor.config.ts`:
-
-```ts
-import type { CapacitorConfig } from "@capacitor/cli";
-
-const config: CapacitorConfig = {
-  appId: "com.nanen9396.cuotiji",
-  appName: "错题集",
-  webDir: "dist",
-};
-
-export default config;
-```
-
-Add these scripts to `app/package.json`:
-
-```json
-"test:native": "node --test tests/capacitor-config.test.mjs",
-"native:sync": "pnpm run build && cap sync",
-"native:android": "pnpm run native:sync && cap open android",
-"native:ios": "pnpm run native:sync && cap open ios"
-```
-
-- [ ] **Step 5: Generate both native projects**
-
-Run:
-
-```powershell
-pnpm exec cap add android
-pnpm exec cap add ios
-pnpm run native:sync
-```
-
-Expected: Android and iOS projects exist and receive the current `dist` assets. On Windows, an iOS CocoaPods/Xcode-only warning is acceptable only if source generation and asset copy complete.
-
-- [ ] **Step 6: Run the configuration test and verify GREEN**
-
-Run: `pnpm run test:native`
-
-Expected: 1 test passes.
-
-- [ ] **Step 7: Commit**
-
-```powershell
-git add app/package.json app/pnpm-lock.yaml app/capacitor.config.ts app/android app/ios app/tests/capacitor-config.test.mjs app/.gitignore
-git commit -m "build: add Capacitor mobile projects"
-```
+Observed: 1 test passed; both platforms received the native web assets and plugin configuration.
 
 ---
 
-### Task 3: Verify the production shell deliverable
+### Task 4: Document and verify
 
 **Files:**
 - Modify: `README.md`
 
-**Interfaces:**
-- Produces: documented build and platform-opening commands for later native work.
+- [x] **Step 1: Document native commands**
 
-- [ ] **Step 1: Document native prerequisites and commands**
+Document `pnpm run native:sync`, `pnpm run native:android`, and `pnpm run native:ios`; state the development app id and macOS/Xcode requirement.
 
-Add a `原生工程` section explaining `pnpm run native:sync`, `pnpm run native:android`, and `pnpm run native:ios`, and state that iOS archiving requires macOS with Xcode.
+- [x] **Step 2: Run verification**
 
-- [ ] **Step 2: Run the full verification set**
+Run model, OCR, prototype, runtime, native, Sites, build, runtime-integrity, and `git diff --check` checks. Expected: all exit 0; prototype 13/13; native 1/1; protected runtime 28/28.
 
-Run:
+- [x] **Step 3: Commit**
 
-```powershell
-pnpm run test:model
-pnpm run test:ocr
-pnpm run test:prototype
-pnpm run test:runtime
-pnpm run test:native
-pnpm run test:sites
-pnpm run build
-git diff --check
-```
-
-Expected: every command exits 0, prototype reports 13 passing tests, runtime reports 8 passing tests, native config reports 1 passing test, and the repository has no whitespace errors.
-
-- [ ] **Step 3: Commit documentation**
-
-```powershell
-git add README.md docs/superpowers/plans/2026-08-20-capacitor-production-shell.md
-git commit -m "docs: describe native app workflow"
-```
+Commit the generated platform sources, configuration, tests, docs, and the reversion that restores the protected runtime.
 
 ## Plan Self-Review
 
-- Spec coverage: production/full-screen selection, preserved preview, both platform projects, deterministic app identity, native scripts, documentation, and verification are each covered.
-- Placeholder scan: no TBD, TODO, or undefined implementation step remains.
-- Type consistency: `Capacitor.isNativePlatform`, `shell=native`, app id, app name, and `webDir` match across tests, implementation, and configuration.
+- Spec coverage: desktop preview preservation, native presentation, isolated native assets, deterministic identity, both platforms, API 36, documentation, and verification are covered.
+- Placeholder scan: no TBD or undefined implementation step remains.
+- Type consistency: app id, app name, `dist/native`, scripts, and test assertions match.

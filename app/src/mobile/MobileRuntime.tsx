@@ -20,18 +20,6 @@ export function MobileRuntime({ children }: PropsWithChildren) {
   );
 }
 
-export function ProductionRuntime({ children, platform }: PropsWithChildren<{ platform: "ios" | "android" }>) {
-  return (
-    <MobileDeviceProvider initialDeviceId={platform === "android" ? "pixel-10" : "iphone"}>
-      <KeyboardProvider simulated={false}>
-        <div className="native-app-viewport" data-platform={platform}>
-          {children}
-        </div>
-      </KeyboardProvider>
-    </MobileDeviceProvider>
-  );
-}
-
 function MobileAppViewport({ children }: PropsWithChildren) {
   const { device } = useMobileDevice();
   const keyboard = useKeyboard();

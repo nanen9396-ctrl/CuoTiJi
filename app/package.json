@@ -10,14 +10,21 @@
     "test:ocr": "node --test --test-isolation=none tests/ocr.test.mjs",
     "test:prototype": "playwright test -c playwright.prototype.config.ts",
     "test:runtime": "playwright test",
+    "test:native": "node --test --test-isolation=none tests/capacitor-config.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "predev": "node scripts/check-mobile-runtime.mjs",
     "dev": "vite",
     "prebuild": "node scripts/check-mobile-runtime.mjs",
-    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs"
+    "build": "tsc && vite build && node scripts/prepare-sites-build.mjs",
+    "prepare:native": "node scripts/prepare-native-build.mjs",
+    "native:sync": "pnpm run build && pnpm run prepare:native && cap sync",
+    "native:android": "pnpm run native:sync && cap open android",
+    "native:ios": "pnpm run native:sync && cap open ios"
   },
   "dependencies": {
-    "@capacitor/core": "^8.5.0",
+    "@capacitor/android": "8.5.0",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/ios": "8.5.0",
     "@fontsource/roboto": "5.2.10",
     "@radix-ui/react-dialog": "1.1.19",
     "@radix-ui/react-dropdown-menu": "2.1.20",
@@ -29,6 +36,7 @@
     "tesseract.js": "7.0.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.5.0",
     "@playwright/test": "1.61.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",

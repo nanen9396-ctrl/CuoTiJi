@@ -35,12 +35,17 @@ test("shows the camera-first wrong-question library home", async ({ page }) => {
   }
 });
 
-test("renders the production app without the preview device frame", async ({ page }) => {
-  await page.goto("/?shell=native");
+test("renders the production app full-screen without visible preview chrome", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => { document.documentElement.dataset.nativeShell = "true"; });
 
   await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
-  await expect(page.getByTestId("device-picker")).toHaveCount(0);
-  await expect(page.getByTestId("mobile-app-viewport")).toHaveCount(0);
+  await expect(page.getByTestId("device-picker")).toBeHidden();
+  const frame = await page.getByTestId("phone-frame").evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
+  });
+  expect(frame).toEqual({ x: 0, y: 0, width: 1100, height: 1100 });
 });
 
 test("offers separate camera and gallery inputs", async ({ page }) => {
@@ -132,6 +137,24 @@ test("shows OCR progress and opens the recognized text for correction", async ({
   await expect(page.getByRole("button", { name: "手动录入" })).toBeDisabled();
   await expect(page.getByRole("heading", { name: "确认错题" })).toBeVisible();
   await expect(page.getByLabel("识别结果")).toHaveValue("识别出的题目");
+});
+
+test("automatically classifies recognized questions and keeps the result editable", async ({ page }) => {
+  await stubOcr(page, `return "设 A 为三阶矩阵，证明 A 的特征值均为实数。";`);
+  await page.goto("/");
+  await page.getByRole("button", { name: "拍照录入" }).click();
+  await page.getByTestId("gallery-input").setInputFiles({ name: "question.png", mimeType: "image/png", buffer: tinyPng });
+  await page.getByRole("button", { name: "开始识别" }).click();
+
+  await expect(page.getByRole("heading", { name: "确认错题" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "考研数学", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "线性代数", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "证明题", exact: true })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByRole("button", { name: "大学课程", exact: true }).click();
+  await page.getByRole("button", { name: "解答题", exact: true }).click();
+  await expect(page.getByRole("button", { name: "大学课程", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "解答题", exact: true })).toHaveAttribute("aria-pressed", "true");
 });
 
 test("ignores a late OCR result after leaving the scan screen", async ({ page }) => {

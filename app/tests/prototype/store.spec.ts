@@ -21,10 +21,20 @@ test("persists an image question across a page reload", async ({ page }) => {
       image: new Blob(["image"], { type: "image/png" }),
     });
     const [question] = await store.listQuestions();
-    return { prompt: question.prompt, imageType: question.image.type, imageText: await question.image.text() };
+    return {
+      prompt: question.prompt,
+      questionType: question.questionType,
+      imageType: question.image.type,
+      imageText: await question.image.text(),
+    };
   });
 
-  expect(saved).toEqual({ prompt: "持久化题目", imageType: "image/png", imageText: "image" });
+  expect(saved).toEqual({
+    prompt: "持久化题目",
+    questionType: "解答题",
+    imageType: "image/png",
+    imageText: "image",
+  });
 
   await page.reload();
   const count = await page.evaluate(async () => {
@@ -75,6 +85,7 @@ test("rejects a save when the IndexedDB transaction aborts after the request suc
         answer: "",
         target: "考研数学",
         subject: "高等数学",
+        questionType: "解答题",
         note: "",
         createdAt: "2026-08-08T00:00:00.000Z",
         image: new Blob(["image"], { type: "image/png" }),

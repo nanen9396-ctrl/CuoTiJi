@@ -24,8 +24,10 @@ import {
 import { FlowStack, KeyboardTextarea, MobileScroll, type FlowControls, type FlowScreen } from "./mobile";
 import type { OcrProgress } from "./ocr";
 import {
+  classifyQuestion,
   libraryGroupsWithCounts,
   makeReviewQueue,
+  questionTypes,
   questionsForGroup,
   type LibraryGroup,
   type StoredQuestion,
@@ -100,7 +102,7 @@ function ReviewSession({ queue }: { queue: StoredQuestion[] }) {
       <main className="review-content">
         <div className="review-meta">
           <span>第 {index + 1} / {queue.length} 题</span>
-          <span>{question.subject}</span>
+          <span>{question.subject} · {question.questionType}</span>
         </div>
         <article className="review-card">
           <StoredImage image={question.image} alt="原题图片" className="review-image" />
@@ -170,7 +172,7 @@ function LibraryView({ flow, group }: { flow: FlowControls; group: LibraryGroup 
             {currentQuestions.map((question, questionIndex) => (
               <article className="question-row" key={question.id}>
                 <span>{String(questionIndex + 1).padStart(2, "0")}</span>
-                <div><strong>{question.prompt}</strong><small>{question.subject}</small></div>
+                <div><strong>{question.prompt}</strong><small>{question.subject} · {question.questionType}</small></div>
               </article>
             ))}
           </section>
@@ -197,9 +199,11 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
 
 function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: { flow: FlowControls; image: File; recognizedText: string; manual: boolean; emptyResult: boolean }) {
   const { saveQuestion } = useWrongbook();
+  const inferred = useMemo(() => classifyQuestion(recognizedText), [recognizedText]);
   const [prompt, setPrompt] = useState(recognizedText);
-  const [target, setTarget] = useState("考研数学");
-  const [subject, setSubject] = useState("高等数学");
+  const [target, setTarget] = useState(inferred.target);
+  const [subject, setSubject] = useState(inferred.subject);
+  const [questionType, setQuestionType] = useState(inferred.questionType);
   const [answer, setAnswer] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -218,6 +222,7 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
       answer: answer.trim(),
       target,
       subject,
+      questionType,
       note: note.trim(),
       createdAt: new Date().toISOString(),
       image,
@@ -254,8 +259,16 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
         <section className="form-section" aria-labelledby="subject-label">
           <h3 id="subject-label">科目</h3>
           <div className="choice-row">
-            {["高等数学", "线性代数", "概率论", "语文", "英语", "物理", "化学"].map((choice) => (
+            {["高等数学", "线性代数", "概率论", "行政职业能力测验", "申论", "语文", "英语", "物理", "化学"].map((choice) => (
               <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => setSubject(choice)}>{choice}</button>
+            ))}
+          </div>
+        </section>
+        <section className="form-section" aria-labelledby="question-type-label">
+          <h3 id="question-type-label">题型</h3>
+          <div className="choice-row">
+            {questionTypes.map((choice) => (
+              <button key={choice} type="button" className="choice-chip" aria-pressed={questionType === choice} onClick={() => setQuestionType(choice)}>{choice}</button>
             ))}
           </div>
         </section>
