@@ -43,6 +43,29 @@ async function seedQuestion(page: Page, overrides: Record<string, string>) {
   }, overrides);
 }
 
+function answerDialogs(page: Page, answers: readonly boolean[]): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    let index = 0;
+    const messages: string[] = [];
+    const handler = async (dialog: import("@playwright/test").Dialog) => {
+      try {
+        messages.push(dialog.message());
+        if (answers[index]) await dialog.accept();
+        else await dialog.dismiss();
+        index += 1;
+        if (index === answers.length) {
+          page.off("dialog", handler);
+          resolve(messages);
+        }
+      } catch (reason) {
+        page.off("dialog", handler);
+        reject(reason);
+      }
+    };
+    page.on("dialog", handler);
+  });
+}
+
 async function installControlledStoreWrite(page: Page) {
   await page.evaluate(() => {
     const originalOpen = indexedDB.open;
@@ -54,8 +77,10 @@ async function installControlledStoreWrite(page: Page) {
     const transaction: Record<string, unknown> = {
       error: new DOMException("Quota exceeded", "QuotaExceededError"),
       objectStore: () => ({
+        add: (value: unknown) => startWrite("add", value),
         put: (value: unknown) => startWrite("put", value),
         delete: (value: unknown) => startWrite("delete", value),
+        clear: () => startWrite("clear", undefined),
       }),
     };
     const startWrite = (method: string, value: unknown) => {
@@ -74,8 +99,10 @@ async function installControlledStoreWrite(page: Page) {
       complete: async () => {
         restore();
         const store = await import("/src/wrongbook-store.ts");
+        if (writeMethod === "add") await store.addQuestion(writeValue as Parameters<typeof store.addQuestion>[0]);
         if (writeMethod === "put") await store.updateQuestion(writeValue as Parameters<typeof store.updateQuestion>[0]);
         if (writeMethod === "delete") await store.deleteQuestion(writeValue as string);
+        if (writeMethod === "clear") await store.clearQuestions();
         events.push("transaction-complete");
         (transaction.oncomplete as (() => void) | undefined)?.();
       },
@@ -128,6 +155,96 @@ test("shows the camera-first wrong-question library home", async ({ page }) => {
   for (const title of ["考研数学", "公务员考试", "高中课程", "大学课程", "全部错题"]) {
     await expect(page.getByRole("button", { name: title })).toBeVisible();
   }
+});
+
+test("exports an image-inclusive backup after the privacy confirmation", async ({ page }) => {
+  await seedQuestion(page, { id: "backup-me", prompt: "备份题目" });
+  await page.addInitScript(() => Object.defineProperty(navigator, "share", { configurable: true, value: undefined }));
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "导出完整备份" }).click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+});
+
+test("imports valid records and reports skipped duplicate IDs", async ({ page }) => {
+  await seedQuestion(page, { id: "existing", prompt: "本机题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  const document = {
+    format: "cuotiji",
+    version: 1,
+    exportedAt: "2026-08-24T00:00:00.000Z",
+    questions: [
+      { id: "existing", prompt: "不得覆盖", answer: "", target: "考研数学", subject: "高等数学", questionType: "解答题", note: "", createdAt: "2026-08-24T00:00:00.000Z", image: { type: "image/png", base64: tinyPng.toString("base64") } },
+      { id: "imported", prompt: "导入题目", answer: "", target: "高中课程", subject: "物理", questionType: "选择题", note: "", createdAt: "2026-08-24T00:00:00.000Z", image: { type: "image/png", base64: tinyPng.toString("base64") } },
+    ],
+  };
+  await page.getByTestId("backup-input").setInputFiles({ name: "backup.cuotiji.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(document)) });
+  await expect(page.getByRole("status")).toContainText("新增 1 道，跳过 1 道");
+});
+
+test("rejects invalid imports and double-confirms clear-all", async ({ page }) => {
+  await seedQuestion(page, { id: "keep-until-confirmed", prompt: "清空测试题" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await page.getByTestId("backup-input").setInputFiles({ name: "bad.cuotiji.json", mimeType: "application/json", buffer: Buffer.from("not json") });
+  await expect(page.getByRole("alert")).toContainText("不是有效的 JSON");
+  const cancelledClear = answerDialogs(page, [true, false]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  const cancelledMessages = await cancelledClear;
+  expect(cancelledMessages[1]).toContain("1 道");
+  await expect(page.getByText("当前共 1 道错题")).toBeVisible();
+  const confirmedClear = answerDialogs(page, [true, true]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  await confirmedClear;
+  await expect(page.getByText("当前共 0 道错题")).toBeVisible();
+});
+
+test("locks question edits while clear-all is awaiting transaction completion", async ({ page }) => {
+  await seedQuestion(page, { id: "clear-race", prompt: "清空竞态题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await installControlledStoreWrite(page);
+  const confirmations = answerDialogs(page, [true, true]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  await confirmations;
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "clear", "request-success"]);
+
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /清空竞态题目/ }).click();
+  const detail = page.getByTestId("flow-current");
+  await expect(detail.getByLabel("题目文字")).toBeDisabled();
+  await expect(detail.getByRole("button", { name: "保存修改" })).toBeDisabled();
+  await expect(detail.getByRole("button", { name: "删除错题" })).toBeDisabled();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "clear", "request-success", "transaction-complete", "close"]);
+  await expect(page.getByText("还没有错题，先拍照录入一道吧")).toBeVisible();
+});
+
+test("locks data management while a new question is awaiting transaction completion", async ({ page }) => {
+  await openManualEntry(page);
+  await installControlledStoreWrite(page);
+  await page.getByLabel("识别结果").fill("延迟保存题目");
+  await page.getByRole("button", { name: "保存错题" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "add", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: "数据管理" }).click();
+
+  const management = page.getByTestId("flow-current");
+  await expect(management.getByRole("button", { name: "导出完整备份" })).toBeDisabled();
+  await expect(management.getByRole("button", { name: "导入备份" })).toBeDisabled();
+  await expect(management.getByRole("button", { name: "清空全部题库" })).toBeDisabled();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "add", "request-success", "transaction-complete", "close"]);
+  await expect(page.getByText("当前共 1 道错题")).toBeVisible();
+  await expect(management.getByRole("button", { name: "清空全部题库" })).toBeEnabled();
 });
 
 test("renders the production app full-screen without visible preview chrome", async ({ page }) => {

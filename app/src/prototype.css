@@ -663,6 +663,32 @@ button.question-row {
   color: #b42318;
 }
 
+.management-actions {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.management-actions .primary-button,
+.management-actions .secondary-button {
+  margin-top: 0;
+}
+
+.danger-button {
+  min-height: 52px;
+  border: 1px solid #f0c7c7;
+  border-radius: 15px;
+  color: #b42318;
+  background: #fff7f7;
+  font: inherit;
+  font-weight: 750;
+}
+
+.danger-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .empty-library {
   margin: 36px 0 0;
   color: #7a859d;

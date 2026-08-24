@@ -23,6 +23,7 @@ import {
 } from "@radix-ui/react-icons";
 import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, type FlowControls, type FlowScreen } from "./mobile";
 import type { OcrProgress } from "./ocr";
+import { createBackupBlob, parseBackupFile } from "./wrongbook-backup";
 import {
   classifyQuestion,
   libraryGroupsWithCounts,
@@ -32,7 +33,14 @@ import {
   type LibraryGroup,
   type StoredQuestion,
 } from "./wrongbook-model";
-import { addQuestion, deleteQuestion, listQuestions, updateQuestion } from "./wrongbook-store";
+import {
+  addQuestion,
+  clearQuestions as clearStoredQuestions,
+  deleteQuestion,
+  importQuestions as importStoredQuestions,
+  listQuestions,
+  updateQuestion,
+} from "./wrongbook-store";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const targetChoices = ["考研数学", "公务员考试", "高中课程", "大学课程"];
@@ -50,9 +58,12 @@ type WrongbookSession = {
   questions: StoredQuestion[];
   loadError: string;
   pendingQuestionIds: ReadonlySet<string>;
+  dataMutationPending: boolean;
   saveQuestion: (question: StoredQuestion) => Promise<void>;
   editQuestion: (question: StoredQuestion) => Promise<void>;
   removeQuestion: (id: string) => Promise<void>;
+  importQuestionBatch: (questions: readonly StoredQuestion[]) => Promise<{ added: number; skipped: number }>;
+  clearAllQuestions: () => Promise<void>;
 };
 
 const WrongbookContext = createContext<WrongbookSession | null>(null);
@@ -216,7 +227,7 @@ function libraryScreen(group: LibraryGroup): FlowScreen {
 }
 
 function QuestionDetail({ question }: { question: StoredQuestion }) {
-  const { questions, pendingQuestionIds, editQuestion, removeQuestion } = useWrongbook();
+  const { questions, pendingQuestionIds, dataMutationPending, editQuestion, removeQuestion } = useWrongbook();
   const liveFlow = useFlow();
   const detailKey = useRef(liveFlow.current.key);
   const storedQuestion = questions.find((item) => item.id === question.id);
@@ -232,7 +243,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [awaitingSessionSync, setAwaitingSessionSync] = useState(sessionBusy);
-  const controlsDisabled = busy || sessionBusy || awaitingSessionSync;
+  const controlsDisabled = busy || sessionBusy || awaitingSessionSync || dataMutationPending;
 
   useEffect(() => {
     if (!questionExists && liveFlow.current.key === detailKey.current) liveFlow.pop();
@@ -611,6 +622,118 @@ function scanScreen(): FlowScreen {
   };
 }
 
+function DataManagement() {
+  const { questions, pendingQuestionIds, dataMutationPending, importQuestionBatch, clearAllQuestions } = useWrongbook();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const controlsDisabled = busy || pendingQuestionIds.size > 0 || dataMutationPending;
+
+  const clearFeedback = () => {
+    setStatus("");
+    setError("");
+  };
+
+  const exportBackup = async () => {
+    if (controlsDisabled || !window.confirm("备份包含原题照片和个人笔记，且未加密。继续导出吗？")) return;
+    clearFeedback();
+    setBusy(true);
+    try {
+      const blob = await createBackupBlob(questions);
+      const date = new Date().toISOString().slice(0, 10);
+      const file = new File([blob], `cuotiji-${date}.cuotiji.json`, { type: "application/json" });
+      const shareData = { files: [file], title: "错题集完整备份" };
+      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+        try {
+          await navigator.share(shareData);
+        } catch (reason) {
+          if (reason instanceof DOMException && reason.name === "AbortError") return;
+          throw reason;
+        }
+      } else {
+        const url = URL.createObjectURL(file);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 0);
+      }
+      setStatus("备份已导出");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "备份导出失败，请重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || controlsDisabled) return;
+    clearFeedback();
+    setBusy(true);
+    try {
+      const incoming = await parseBackupFile(file);
+      const { added, skipped } = await importQuestionBatch(incoming);
+      setStatus(`导入完成：新增 ${added} 道，跳过 ${skipped} 道`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "备份导入失败，请重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearAll = async () => {
+    if (controlsDisabled || !window.confirm("确定要清空全部题库吗？")) return;
+    if (!window.confirm(`将永久删除 ${questions.length} 道错题，此操作无法撤销。继续吗？`)) return;
+    clearFeedback();
+    setBusy(true);
+    try {
+      await clearAllQuestions();
+      setStatus("题库已清空");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "清空题库失败，请重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <MobileScroll className="app-screen detail-page">
+      <main className="detail-content">
+        <div className="detail-summary">
+          <span>当前共 {questions.length} 道错题</span>
+          <p>完整备份包含原题照片和个人笔记，文件未加密，请妥善保管。</p>
+        </div>
+        <input ref={fileInput} className="scan-input" data-testid="backup-input" type="file" accept=".json,application/json" onChange={importBackup} />
+        <div className="management-actions">
+          <button className="primary-button" type="button" disabled={controlsDisabled} onClick={exportBackup}>导出完整备份</button>
+          <button className="secondary-button" type="button" disabled={controlsDisabled} onClick={() => fileInput.current?.click()}>导入备份</button>
+          <button className="danger-button" type="button" disabled={controlsDisabled} onClick={clearAll}>清空全部题库</button>
+        </div>
+        {status ? <p className="recognition-status" role="status">{status}</p> : null}
+        {error ? <p className="form-error" role="alert">{error}</p> : null}
+      </main>
+    </MobileScroll>
+  );
+}
+
+function dataManagementScreen(): FlowScreen {
+  return {
+    id: "data-management",
+    headerHeight: 54,
+    header: (flow) => (
+      <div className="app-header app-header-light">
+        <button type="button" className="back-button" aria-label="返回" onClick={flow.pop}><ChevronLeftIcon /></button>
+        <h1>数据管理</h1>
+        <span className="header-spacer" aria-hidden="true" />
+      </div>
+    ),
+    render: () => <DataManagement />,
+  };
+}
+
 function HomeView({ flow }: { flow: FlowControls }) {
   const { questions, loadError } = useWrongbook();
   const groups = libraryGroupsWithCounts(questions);
@@ -637,6 +760,11 @@ function HomeView({ flow }: { flow: FlowControls }) {
                 </button>
               );
             })}
+            <button className="library-row" type="button" aria-label="数据管理" onClick={() => flow.push(dataManagementScreen())}>
+              <span className="library-icon" aria-hidden="true"><ArchiveIcon /></span>
+              <span className="library-copy"><strong>数据管理</strong><small>导入、导出与清空题库</small></span>
+              <ChevronRightIcon className="library-chevron" aria-hidden="true" />
+            </button>
           </div>
         </section>
       </main>
@@ -651,6 +779,8 @@ export default function Prototype() {
   const [loadError, setLoadError] = useState("");
   const pendingQuestionMutations = useRef(new Set<string>());
   const [pendingQuestionIds, setPendingQuestionIds] = useState<ReadonlySet<string>>(new Set());
+  const dataMutation = useRef(false);
+  const [dataMutationPending, setDataMutationPending] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -662,12 +792,8 @@ export default function Prototype() {
     return () => { active = false; };
   }, []);
 
-  const saveQuestion = useCallback(async (question: StoredQuestion) => {
-    await addQuestion(question);
-    setQuestions((current) => [question, ...current]);
-  }, []);
   const beginQuestionMutation = useCallback((id: string) => {
-    if (pendingQuestionMutations.current.has(id)) return false;
+    if (dataMutation.current || pendingQuestionMutations.current.has(id)) return false;
     pendingQuestionMutations.current.add(id);
     setPendingQuestionIds(new Set(pendingQuestionMutations.current));
     return true;
@@ -676,6 +802,15 @@ export default function Prototype() {
     pendingQuestionMutations.current.delete(id);
     setPendingQuestionIds(new Set(pendingQuestionMutations.current));
   }, []);
+  const saveQuestion = useCallback(async (question: StoredQuestion) => {
+    if (!beginQuestionMutation(question.id)) throw new Error("Question mutation already pending");
+    try {
+      await addQuestion(question);
+      setQuestions((current) => [question, ...current]);
+    } finally {
+      finishQuestionMutation(question.id);
+    }
+  }, [beginQuestionMutation, finishQuestionMutation]);
   const editQuestion = useCallback(async (question: StoredQuestion) => {
     if (!beginQuestionMutation(question.id)) throw new Error("Question mutation already pending");
     try {
@@ -694,9 +829,38 @@ export default function Prototype() {
       finishQuestionMutation(id);
     }
   }, [beginQuestionMutation, finishQuestionMutation]);
+  const beginDataMutation = useCallback(() => {
+    if (dataMutation.current || pendingQuestionMutations.current.size) return false;
+    dataMutation.current = true;
+    setDataMutationPending(true);
+    return true;
+  }, []);
+  const finishDataMutation = useCallback(() => {
+    dataMutation.current = false;
+    setDataMutationPending(false);
+  }, []);
+  const importQuestionBatch = useCallback(async (incoming: readonly StoredQuestion[]) => {
+    if (!beginDataMutation()) throw new Error("请等待正在进行的题目操作完成");
+    try {
+      const result = await importStoredQuestions(incoming);
+      setQuestions((current) => [...result.added, ...current].sort((left, right) => right.createdAt.localeCompare(left.createdAt)));
+      return { added: result.added.length, skipped: result.skipped };
+    } finally {
+      finishDataMutation();
+    }
+  }, [beginDataMutation, finishDataMutation]);
+  const clearAllQuestions = useCallback(async () => {
+    if (!beginDataMutation()) throw new Error("请等待正在进行的题目操作完成");
+    try {
+      await clearStoredQuestions();
+      setQuestions([]);
+    } finally {
+      finishDataMutation();
+    }
+  }, [beginDataMutation, finishDataMutation]);
   const session = useMemo(
-    () => ({ questions, loadError, pendingQuestionIds, saveQuestion, editQuestion, removeQuestion }),
-    [questions, loadError, pendingQuestionIds, saveQuestion, editQuestion, removeQuestion],
+    () => ({ questions, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions }),
+    [questions, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions],
   );
 
   return <WrongbookContext.Provider value={session}><FlowStack initial={homeScreen} /></WrongbookContext.Provider>;
