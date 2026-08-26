@@ -24,6 +24,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isIsoTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
 async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";
@@ -53,7 +59,7 @@ function parseQuestion(value: unknown): StoredQuestion {
   if (strings.some((field) => typeof field !== "string") || !(id as string).trim() || !(prompt as string).trim()) {
     fail("备份中的题目数据无效");
   }
-  if (!questionTypes.includes(questionType as QuestionType) || Number.isNaN(Date.parse(createdAt as string))) {
+  if (!questionTypes.includes(questionType as QuestionType) || !isIsoTimestamp(createdAt)) {
     fail("备份中的题目数据无效");
   }
   if (typeof image.type !== "string") fail("备份中的图片类型无效");
@@ -105,7 +111,7 @@ export async function parseBackupFile(file: Pick<Blob, "size" | "text">): Promis
   }
   if (!isRecord(value) || value.format !== "cuotiji") fail("不是错题集备份文件");
   if (value.version !== 1) fail("不支持的备份版本");
-  if (typeof value.exportedAt !== "string" || Number.isNaN(Date.parse(value.exportedAt)) || !Array.isArray(value.questions)) {
+  if (!isIsoTimestamp(value.exportedAt) || !Array.isArray(value.questions)) {
     fail("备份文件结构无效");
   }
   return value.questions.map(parseQuestion);

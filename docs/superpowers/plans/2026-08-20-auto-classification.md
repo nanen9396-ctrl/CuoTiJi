@@ -67,7 +67,7 @@ Expected: FAIL because list results do not yet normalize `questionType`.
 
 Add `questionType: QuestionType` to `StoredQuestion`; normalize missing values in `listQuestions`; initialize the confirmation states from `classifyQuestion(recognizedText)`; render chips from `questionTypes`; include the selected type on save and in library/review metadata.
 
-- [ ] **Step 4: Verify persistence GREEN**
+- [x] **Step 4: Verify persistence GREEN**
 
 Run the targeted persistence test and TypeScript build. Expected: both pass.
 
@@ -88,7 +88,7 @@ Run: `pnpm run test:prototype --grep "automatically classifies"`.
 
 Expected final result: 1 test passed.
 
-- [ ] **Step 3: Run regression**
+- [x] **Step 3: Run regression**
 
 Run model, prototype, runtime, OCR, native, Sites, build, protected-runtime integrity, and whitespace checks. Commit when Git writes are available.
 

@@ -11,4 +11,10 @@ test("defines a stable Capacitor app identity and both native projects", () => {
   assert.equal(existsSync(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url)), true);
   const nativeIndex = readFileSync(new URL("../dist/native/index.html", import.meta.url), "utf8");
   assert.match(nativeIndex, /data-native-shell="true"/);
+
+  const infoPlist = readFileSync(new URL("../ios/App/App/Info.plist", import.meta.url), "utf8");
+  assert.match(infoPlist, /<key>NSCameraUsageDescription<\/key>\s*<string>用于拍摄错题并在本机识别和整理。<\/string>/);
+
+  const androidManifest = readFileSync(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
+  assert.match(androidManifest, /android:allowBackup="false"/);
 });

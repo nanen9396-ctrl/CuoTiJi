@@ -105,10 +105,25 @@ function savedScreen(target: string, subject: string): FlowScreen {
   };
 }
 
-function ReviewSession({ queue }: { queue: StoredQuestion[] }) {
-  const [index, setIndex] = useState(0);
+function ReviewSession({ queueIds }: { queueIds: string[] }) {
+  const { questions } = useWrongbook();
+  const [currentId, setCurrentId] = useState(queueIds[0] ?? "");
   const [showAnswer, setShowAnswer] = useState(false);
+  const questionsById = new Map(questions.map((question) => [question.id, question]));
+  const queue = queueIds.flatMap((id) => {
+    const question = questionsById.get(id);
+    return question ? [question] : [];
+  });
+  const liveIndex = queue.findIndex((question) => question.id === currentId);
+  const removedIndex = queueIds.indexOf(currentId);
+  const index = liveIndex >= 0 ? liveIndex : Math.min(Math.max(removedIndex, 0), queue.length - 1);
   const question = queue[index];
+
+  useEffect(() => {
+    if (question?.id === currentId) return;
+    setCurrentId(question?.id ?? "");
+    setShowAnswer(false);
+  }, [currentId, question?.id]);
 
   if (!question) {
     return <MobileScroll className="app-screen review-page"><main className="review-content empty-library">还没有可复习的错题</main></MobileScroll>;
@@ -136,7 +151,7 @@ function ReviewSession({ queue }: { queue: StoredQuestion[] }) {
             {showAnswer ? "隐藏答案" : "显示答案"}
           </button>
           <button className="primary-button" type="button" onClick={() => {
-            setIndex((value) => (value + 1) % queue.length);
+            setCurrentId(queue[(index + 1) % queue.length].id);
             setShowAnswer(false);
           }}>
             下一题
@@ -147,7 +162,7 @@ function ReviewSession({ queue }: { queue: StoredQuestion[] }) {
   );
 }
 
-function reviewScreen(queue: StoredQuestion[]): FlowScreen {
+function reviewScreen(queueIds: string[]): FlowScreen {
   return {
     id: "review",
     headerHeight: 54,
@@ -158,7 +173,7 @@ function reviewScreen(queue: StoredQuestion[]): FlowScreen {
         <span className="header-spacer" aria-hidden="true" />
       </div>
     ),
-    render: () => <ReviewSession queue={queue} />,
+    render: () => <ReviewSession queueIds={queueIds} />,
   };
 }
 
@@ -186,10 +201,10 @@ function LibraryView({ flow, group }: { flow: FlowControls; group: LibraryGroup 
         </div>
         <KeyboardInput className="library-search" type="search" aria-label="搜索错题" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索题目、答案、笔记或分类" />
         <div className="study-actions">
-          <button className="secondary-button" type="button" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, false)))}>
+          <button className="secondary-button" type="button" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, false).map(({ id }) => id)))}>
             顺序刷题
           </button>
-          <button className="primary-button shuffle-button" type="button" aria-label="乱序刷题" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, true)))}>
+          <button className="primary-button shuffle-button" type="button" aria-label="乱序刷题" disabled={isEmpty} onClick={() => flow.push(reviewScreen(makeReviewQueue(currentQuestions, true).map(({ id }) => id)))}>
             <ShuffleIcon aria-hidden="true" />乱序刷题
           </button>
         </div>
@@ -313,6 +328,7 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
   return (
     <MobileScroll className="app-screen confirm-page">
       <main className="confirm-content">
+        <StoredImage image={storedQuestion?.image ?? question.image} alt="原题图片" className="review-image" />
         <label className="text-field question-preview">
           <span>题目文字</span>
           <KeyboardTextarea aria-label="题目文字" value={prompt} disabled={controlsDisabled} onChange={(event) => {
@@ -629,39 +645,53 @@ function DataManagement() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [backupFile, setBackupFile] = useState<File | null>(null);
   const controlsDisabled = busy || loadState !== "ready" || pendingQuestionIds.size > 0 || dataMutationPending;
+
+  useEffect(() => {
+    setBackupFile(null);
+  }, [questions]);
 
   const clearFeedback = () => {
     setStatus("");
     setError("");
   };
 
-  const exportBackup = async () => {
-    if (controlsDisabled || !window.confirm("备份包含原题照片和个人笔记，且未加密。继续导出吗？")) return;
+  const generateBackup = async () => {
+    if (controlsDisabled || !window.confirm("备份包含原题照片和个人笔记，且未加密。继续生成吗？")) return;
     clearFeedback();
+    setBackupFile(null);
     setBusy(true);
     try {
       const blob = await createBackupBlob(questions);
       const date = new Date().toISOString().slice(0, 10);
-      const file = new File([blob], `cuotiji-${date}.cuotiji.json`, { type: "application/json" });
-      const shareData = { files: [file], title: "错题集完整备份" };
+      setBackupFile(new File([blob], `cuotiji-${date}.cuotiji.json`, { type: "application/json" }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "备份生成失败，请重试");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const shareBackup = async () => {
+    if (controlsDisabled || !backupFile) return;
+    clearFeedback();
+    setBusy(true);
+    const shareData = { files: [backupFile], title: "错题集完整备份" };
+    try {
       if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
-        try {
-          await navigator.share(shareData);
-        } catch (reason) {
-          if (reason instanceof DOMException && reason.name === "AbortError") return;
-          throw reason;
-        }
+        await navigator.share(shareData);
       } else {
-        const url = URL.createObjectURL(file);
+        const url = URL.createObjectURL(backupFile);
         const link = document.createElement("a");
         link.href = url;
-        link.download = file.name;
+        link.download = backupFile.name;
         link.click();
         setTimeout(() => URL.revokeObjectURL(url), 0);
       }
       setStatus("备份已导出");
     } catch (reason) {
+      if (reason instanceof Error && reason.name === "AbortError") return;
       setError(reason instanceof Error ? reason.message : "备份导出失败，请重试");
     } finally {
       setBusy(false);
@@ -709,11 +739,12 @@ function DataManagement() {
         </div>
         <input ref={fileInput} className="scan-input" data-testid="backup-input" type="file" accept=".json,application/json" onChange={importBackup} />
         <div className="management-actions">
-          <button className="primary-button" type="button" disabled={controlsDisabled} onClick={exportBackup}>导出完整备份</button>
+          <button className="primary-button" type="button" disabled={controlsDisabled} onClick={generateBackup}>生成完整备份</button>
+          <button className="secondary-button" type="button" disabled={controlsDisabled || !backupFile} onClick={shareBackup}>分享或下载</button>
           <button className="secondary-button" type="button" disabled={controlsDisabled} onClick={() => fileInput.current?.click()}>导入备份</button>
           <button className="danger-button" type="button" disabled={controlsDisabled} onClick={clearAll}>清空全部题库</button>
         </div>
-        {status ? <p className="recognition-status" role="status">{status}</p> : null}
+        {status || backupFile ? <p className="recognition-status" role="status">{status || "完整备份已生成，可点击“分享或下载”"}</p> : null}
         {loadError || error ? <p className="form-error" role="alert">{loadError || error}</p> : null}
       </main>
     </MobileScroll>

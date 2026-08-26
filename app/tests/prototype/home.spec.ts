@@ -208,14 +208,16 @@ test("shows the camera-first wrong-question library home", async ({ page }) => {
   }
 });
 
-test("exports an image-inclusive backup after the privacy confirmation", async ({ page }) => {
+test("generates then downloads an image-inclusive backup in two direct clicks", async ({ page }) => {
   await seedQuestion(page, { id: "backup-me", prompt: "备份题目" });
   await page.addInitScript(() => Object.defineProperty(navigator, "share", { configurable: true, value: undefined }));
   await page.reload();
   await page.getByRole("button", { name: "数据管理" }).click();
   page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await expect(page.getByRole("status")).toContainText("完整备份已生成");
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await page.getByRole("button", { name: "分享或下载" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
 });
@@ -288,7 +290,8 @@ test("locks data management while a new question is awaiting transaction complet
   await page.getByRole("button", { name: "数据管理" }).click();
 
   const management = page.getByTestId("flow-current");
-  await expect(management.getByRole("button", { name: "导出完整备份" })).toBeDisabled();
+  await expect(management.getByRole("button", { name: "生成完整备份" })).toBeDisabled();
+  await expect(management.getByRole("button", { name: "分享或下载" })).toBeDisabled();
   await expect(management.getByRole("button", { name: "导入备份" })).toBeDisabled();
   await expect(management.getByRole("button", { name: "清空全部题库" })).toBeDisabled();
 
@@ -303,14 +306,15 @@ test("keeps every data action disabled until the initial question load succeeds"
   await page.goto("/");
   await page.getByRole("button", { name: "数据管理" }).click();
   const management = page.getByTestId("flow-current");
-  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+  for (const name of ["生成完整备份", "分享或下载", "导入备份", "清空全部题库"]) {
     await expect(management.getByRole("button", { name })).toBeDisabled();
   }
 
   await settleQuestionLoad(page, "succeed");
-  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+  for (const name of ["生成完整备份", "导入备份", "清空全部题库"]) {
     await expect(management.getByRole("button", { name })).toBeEnabled();
   }
+  await expect(management.getByRole("button", { name: "分享或下载" })).toBeDisabled();
 });
 
 test("keeps every data action disabled when the initial question load fails", async ({ page }) => {
@@ -320,7 +324,7 @@ test("keeps every data action disabled when the initial question load fails", as
   await settleQuestionLoad(page, "fail");
   const management = page.getByTestId("flow-current");
   await expect(management.getByRole("alert")).toHaveText("本地题库加载失败，请刷新重试");
-  for (const name of ["导出完整备份", "导入备份", "清空全部题库"]) {
+  for (const name of ["生成完整备份", "分享或下载", "导入备份", "清空全部题库"]) {
     await expect(management.getByRole("button", { name })).toBeDisabled();
   }
 });
@@ -340,7 +344,9 @@ test("uses supported Web Share for the complete backup", async ({ page }) => {
   await page.reload();
   await page.getByRole("button", { name: "数据管理" }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  expect(await page.evaluate(() => (window as typeof window & { __shareTrace?: { shares: unknown[] } }).__shareTrace?.shares.length)).toBe(0);
+  await page.getByRole("button", { name: "分享或下载" }).click();
   await expect(page.getByRole("status")).toHaveText("备份已导出");
   const trace = await page.evaluate(() => (window as typeof window & { __shareTrace?: { canShareCalls: number; shares: { title: string; name: string; type: string; text: string }[] } }).__shareTrace);
   expect(trace?.canShareCalls).toBe(1);
@@ -363,11 +369,12 @@ test("treats an AbortError from Web Share as cancellation", async ({ page }) => 
   await page.goto("/");
   await page.getByRole("button", { name: "数据管理" }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "导出完整备份" }).click();
-  await expect(page.getByRole("button", { name: "导出完整备份" })).toBeEnabled();
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await page.getByRole("button", { name: "分享或下载" }).click();
+  await expect(page.getByRole("button", { name: "分享或下载" })).toBeEnabled();
   expect(await page.evaluate(() => (window as typeof window & { __shareCalls?: number }).__shareCalls)).toBe(1);
   await expect(page.getByRole("alert")).toHaveCount(0);
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("完整备份已生成");
 });
 
 test("surfaces non-cancellation Web Share failures", async ({ page }) => {
@@ -378,9 +385,10 @@ test("surfaces non-cancellation Web Share failures", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "数据管理" }).click();
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await page.getByRole("button", { name: "分享或下载" }).click();
   await expect(page.getByRole("alert")).toHaveText("系统分享失败");
-  await expect(page.getByRole("status")).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("完整备份已生成");
 });
 
 test("downloads and revokes the object URL when canShare rejects files", async ({ page }) => {
@@ -406,13 +414,42 @@ test("downloads and revokes the object URL when canShare rejects files", async (
   await page.goto("/");
   await page.getByRole("button", { name: "数据管理" }).click();
   page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "生成完整备份" }).click();
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "导出完整备份" }).click();
+  await page.getByRole("button", { name: "分享或下载" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
   await expect.poll(() => page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace)).toMatchObject({ shareCalls: 0, created: [expect.any(String)], revoked: [expect.any(String)] });
   const trace = await page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace);
   expect(trace?.revoked).toEqual(trace?.created);
+});
+
+test("invalidates a generated backup after imports and clear-all", async ({ page }) => {
+  await seedQuestion(page, { id: "stale-backup", prompt: "生成备份时的题目" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await expect(page.getByRole("button", { name: "分享或下载" })).toBeEnabled();
+
+  const document = {
+    format: "cuotiji",
+    version: 1,
+    exportedAt: "2026-08-24T00:00:00.000Z",
+    questions: [
+      { id: "stale-import", prompt: "使备份失效的导入题目", answer: "", target: "高中课程", subject: "物理", questionType: "选择题", note: "", createdAt: "2026-08-24T00:00:00.000Z", image: { type: "image/png", base64: tinyPng.toString("base64") } },
+    ],
+  };
+  await page.getByTestId("backup-input").setInputFiles({ name: "stale.cuotiji.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(document)) });
+  await expect(page.getByRole("button", { name: "分享或下载" })).toBeDisabled();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await expect(page.getByRole("button", { name: "分享或下载" })).toBeEnabled();
+  const confirmations = answerDialogs(page, [true, true]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  await confirmations;
+  await expect(page.getByRole("button", { name: "分享或下载" })).toBeDisabled();
 });
 
 test("keeps imported state unchanged when the import transaction aborts", async ({ page }) => {
@@ -573,6 +610,7 @@ test("edits a question while preserving its image identity fields", async ({ pag
   });
   await page.getByRole("button", { name: "全部错题" }).click();
   await page.getByRole("button", { name: /原题/ }).click();
+  await expect(page.getByAltText("原题图片")).toBeVisible();
   await page.getByLabel("题目文字").fill("修改后的题目");
   await page.getByLabel("正确答案").fill("修改后的答案");
   await page.getByRole("button", { name: "线性代数", exact: true }).click();
@@ -599,6 +637,50 @@ test("edits a question while preserving its image identity fields", async ({ pag
   await page.getByRole("button", { name: "保存修改" }).click();
   await expect(page.getByRole("alert")).toHaveText("请填写题目文字");
   await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+test("removes a delayed deletion from a live review queue and clamps the index", async ({ page }) => {
+  await seedQuestion(page, { id: "review-first", prompt: "保留的第一题", createdAt: "2026-08-25T00:00:00.000Z" });
+  await seedQuestion(page, { id: "review-delete", prompt: "复习中延迟删除", createdAt: "2026-08-24T00:00:00.000Z" });
+  await page.reload();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: /复习中延迟删除/ }).click();
+  await installControlledStoreWrite(page);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除错题" }).click();
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "delete", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: "顺序刷题" }).click();
+  await page.getByRole("button", { name: "下一题" }).click();
+  const review = page.getByTestId("flow-current");
+  await expect(review.getByRole("heading", { name: "复习中延迟删除" })).toBeVisible();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect(review.getByRole("heading", { name: "复习中延迟删除" })).toHaveCount(0);
+  await expect(review.getByRole("heading", { name: "保留的第一题" })).toBeVisible();
+  await expect(review.getByText("第 1 / 1 题")).toBeVisible();
+  await expect(review.getByAltText("原题图片")).toBeVisible();
+});
+
+test("empties a live review queue when a delayed clear completes", async ({ page }) => {
+  await seedQuestion(page, { id: "review-clear", prompt: "复习中延迟清空" });
+  await page.reload();
+  await page.getByRole("button", { name: "数据管理" }).click();
+  await installControlledStoreWrite(page);
+  const confirmations = answerDialogs(page, [true, true]);
+  await page.getByRole("button", { name: "清空全部题库" }).click();
+  await confirmations;
+  await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "clear", "request-success"]);
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByRole("button", { name: "全部错题" }).click();
+  await page.getByRole("button", { name: "顺序刷题" }).click();
+  const review = page.getByTestId("flow-current");
+  await expect(review.getByRole("heading", { name: "复习中延迟清空" })).toBeVisible();
+
+  await settleControlledStoreWrite(page, "complete");
+  await expect(review.getByText("还没有可复习的错题")).toBeVisible();
+  await expect(review.getByRole("heading", { name: "复习中延迟清空" })).toHaveCount(0);
+  await expect(review.getByAltText("原题图片")).toHaveCount(0);
 });
 
 test("requires confirmation before deleting one question", async ({ page }) => {

@@ -40,6 +40,20 @@ test("rejects invalid question fields without returning partial data", async () 
   await assert.rejects(() => backup.parseBackupFile(file), /题目数据无效/);
 });
 
+test("rejects timestamps that are valid dates but not canonical ISO strings", async () => {
+  const makeFile = (overrides) => new Blob([JSON.stringify({
+    format: "cuotiji",
+    version: 1,
+    exportedAt: question.createdAt,
+    questions: [{ ...question, image: { type: "image/png", base64: "iVBORw==" } }],
+    ...overrides,
+  })]);
+  await assert.rejects(() => backup.parseBackupFile(makeFile({
+    questions: [{ ...question, createdAt: "August 24, 2026", image: { type: "image/png", base64: "iVBORw==" } }],
+  })), /题目数据无效/);
+  await assert.rejects(() => backup.parseBackupFile(makeFile({ exportedAt: "August 24, 2026" })), /备份文件结构无效/);
+});
+
 test("rejects invalid image MIME types and Base64", async () => {
   const makeFile = (image) => new Blob([JSON.stringify({
     format: "cuotiji",
