@@ -317,6 +317,16 @@ test("keeps every data action disabled until the initial question load succeeds"
   await expect(management.getByRole("button", { name: "分享或下载" })).toBeDisabled();
 });
 
+test("keeps new-question saving disabled until the initial question load succeeds", async ({ page }) => {
+  await installControlledQuestionLoad(page);
+  await openManualEntry(page);
+  await page.getByLabel("识别结果").fill("加载期间录入的题目");
+
+  await expect(page.getByRole("button", { name: "保存错题" })).toBeDisabled();
+  await settleQuestionLoad(page, "succeed");
+  await expect(page.getByRole("button", { name: "保存错题" })).toBeEnabled();
+});
+
 test("keeps every data action disabled when the initial question load fails", async ({ page }) => {
   await installControlledQuestionLoad(page);
   await page.goto("/");

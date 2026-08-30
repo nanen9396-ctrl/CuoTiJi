@@ -408,7 +408,7 @@ function questionScreen(question: StoredQuestion): FlowScreen {
 }
 
 function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: { flow: FlowControls; image: File; recognizedText: string; manual: boolean; emptyResult: boolean }) {
-  const { saveQuestion } = useWrongbook();
+  const { saveQuestion, loadState } = useWrongbook();
   const inferred = useMemo(() => classifyQuestion(recognizedText), [recognizedText]);
   const [prompt, setPrompt] = useState(recognizedText);
   const [target, setTarget] = useState(inferred.target);
@@ -491,7 +491,7 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
           <KeyboardTextarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="记录错误原因或解题提醒" rows={3} />
         </label>
         {error ? <p className="form-error" role="alert">{error}</p> : null}
-        <button className="primary-button" type="button" aria-label="保存错题" disabled={saving} onClick={save}>{saving ? "保存中…" : "保存错题"}</button>
+        <button className="primary-button" type="button" aria-label="保存错题" disabled={saving || loadState !== "ready"} onClick={save}>{saving ? "保存中…" : "保存错题"}</button>
       </main>
     </MobileScroll>
   );
@@ -842,6 +842,7 @@ export default function Prototype() {
     setPendingQuestionIds(new Set(pendingQuestionMutations.current));
   }, []);
   const saveQuestion = useCallback(async (question: StoredQuestion) => {
+    if (loadState !== "ready") throw new Error("请等待题库加载完成");
     if (!beginQuestionMutation(question.id)) throw new Error("Question mutation already pending");
     try {
       await addQuestion(question);
@@ -849,7 +850,7 @@ export default function Prototype() {
     } finally {
       finishQuestionMutation(question.id);
     }
-  }, [beginQuestionMutation, finishQuestionMutation]);
+  }, [beginQuestionMutation, finishQuestionMutation, loadState]);
   const editQuestion = useCallback(async (question: StoredQuestion) => {
     if (!beginQuestionMutation(question.id)) throw new Error("Question mutation already pending");
     try {

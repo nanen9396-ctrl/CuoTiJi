@@ -40,4 +40,5 @@ html[data-native-shell="true"] .flow-stack {
 
 html[data-native-shell="true"] .mobile-page {
   --mobile-safe-area-height: env(safe-area-inset-bottom, 0px) !important;
+  --keyboard-height: 0px !important;
 }
