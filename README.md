@@ -43,6 +43,8 @@ pnpm run native:sync
 
 使用 `pnpm run native:android` 打开 Android Studio；使用 `pnpm run native:ios` 打开 Xcode。iOS 编译、签名、模拟器和真机验证必须在安装 Xcode 的 macOS 环境完成。正式创建商店记录前需确认最终包名。
 
+Android 发布配置使用包名 `com.nanen9396.cuotiji`、最低 Android 7.0（API 24）并面向 Android 16（API 36）。运行 `pnpm run test:release` 可检查这些配置以及签名密钥忽略规则；`.jks` 与 `.keystore` 文件不得提交到 Git。正式上架的签名 AAB 需要由发布者另行保管上传密钥及密码。
+
 ## 验证
 
 ```powershell
@@ -51,6 +53,7 @@ pnpm run test:model
 pnpm run test:ocr
 pnpm run test:prototype
 pnpm run test:native
+pnpm run test:release
 pnpm run build
 pnpm run test:sites
 ```

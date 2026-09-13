@@ -13,6 +13,7 @@
     "test:runtime": "playwright test",
     "test:native": "pnpm run build && pnpm run prepare:native && node --test --test-isolation=none tests/capacitor-config.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
+    "test:release": "node --test --test-isolation=none tests/android-release.test.mjs",
     "predev": "node scripts/check-mobile-runtime.mjs",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
