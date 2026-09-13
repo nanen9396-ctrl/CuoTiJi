@@ -33,12 +33,12 @@ html[data-native-shell="true"] .device-screen * {
 }
 
 html[data-native-shell="true"] .flow-stack {
-  --flow-header-height: calc(var(--flow-header-content-height) + env(safe-area-inset-top, 0px)) !important;
-  --flow-header-safe-area: env(safe-area-inset-top, 0px) !important;
+  --flow-header-height: calc(var(--flow-header-content-height) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  --flow-header-safe-area: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) !important;
   --keyboard-height: 0px !important;
 }
 
 html[data-native-shell="true"] .mobile-page {
-  --mobile-safe-area-height: env(safe-area-inset-bottom, 0px) !important;
+  --mobile-safe-area-height: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) !important;
   --keyboard-height: 0px !important;
 }

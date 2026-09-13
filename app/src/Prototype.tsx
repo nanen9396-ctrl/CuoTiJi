@@ -21,6 +21,9 @@ import {
   ReaderIcon,
   ShuffleIcon,
 } from "@radix-ui/react-icons";
+import { Capacitor } from "@capacitor/core";
+import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, type FlowControls, type FlowScreen } from "./mobile";
 import type { OcrProgress } from "./ocr";
 import { createBackupBlob, parseBackupFile } from "./wrongbook-backup";
@@ -58,6 +61,7 @@ type WrongbookSession = {
   questions: StoredQuestion[];
   loadState: "loading" | "ready" | "error";
   loadError: string;
+  retryQuestionLoad: () => void;
   pendingQuestionIds: ReadonlySet<string>;
   dataMutationPending: boolean;
   saveQuestion: (question: StoredQuestion) => Promise<void>;
@@ -408,7 +412,7 @@ function questionScreen(question: StoredQuestion): FlowScreen {
 }
 
 function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: { flow: FlowControls; image: File; recognizedText: string; manual: boolean; emptyResult: boolean }) {
-  const { saveQuestion, loadState } = useWrongbook();
+  const { saveQuestion, loadState, loadError, retryQuestionLoad } = useWrongbook();
   const inferred = useMemo(() => classifyQuestion(recognizedText), [recognizedText]);
   const [prompt, setPrompt] = useState(recognizedText);
   const [target, setTarget] = useState(inferred.target);
@@ -490,6 +494,12 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
           <span>个人笔记</span>
           <KeyboardTextarea value={note} onChange={(event) => setNote(event.target.value)} placeholder="记录错误原因或解题提醒" rows={3} />
         </label>
+        {loadError ? (
+          <div>
+            <p className="form-error" role="alert">{loadError}</p>
+            <button className="secondary-button" type="button" onClick={retryQuestionLoad}>重试加载题库</button>
+          </div>
+        ) : null}
         {error ? <p className="form-error" role="alert">{error}</p> : null}
         <button className="primary-button" type="button" aria-label="保存错题" disabled={saving || loadState !== "ready"} onClick={save}>{saving ? "保存中…" : "保存错题"}</button>
       </main>
@@ -679,7 +689,19 @@ function DataManagement() {
     setBusy(true);
     const shareData = { files: [backupFile], title: "错题集完整备份" };
     try {
-      if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
+      if (Capacitor.isNativePlatform()) {
+        const { uri } = await Filesystem.writeFile({
+          path: backupFile.name,
+          data: await backupFile.text(),
+          directory: Directory.Cache,
+          encoding: Encoding.UTF8,
+        });
+        await Share.share({
+          files: [uri],
+          title: "错题集完整备份",
+          dialogTitle: "分享或保存错题集备份",
+        });
+      } else if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
         await navigator.share(shareData);
       } else {
         const url = URL.createObjectURL(backupFile);
@@ -810,6 +832,7 @@ export default function Prototype() {
   const [questions, setQuestions] = useState<StoredQuestion[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
   const [loadError, setLoadError] = useState("");
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const pendingQuestionMutations = useRef(new Set<string>());
   const [pendingQuestionIds, setPendingQuestionIds] = useState<ReadonlySet<string>>(new Set());
   const dataMutation = useRef(false);
@@ -824,11 +847,17 @@ export default function Prototype() {
       }
     }).catch(() => {
       if (active) {
-        setLoadError("本地题库加载失败，请刷新重试");
+        setLoadError("本地题库加载失败，请重试");
         setLoadState("error");
       }
     });
     return () => { active = false; };
+  }, [loadAttempt]);
+
+  const retryQuestionLoad = useCallback(() => {
+    setLoadError("");
+    setLoadState("loading");
+    setLoadAttempt((current) => current + 1);
   }, []);
 
   const beginQuestionMutation = useCallback((id: string) => {
@@ -899,8 +928,8 @@ export default function Prototype() {
     }
   }, [beginDataMutation, finishDataMutation, loadState]);
   const session = useMemo(
-    () => ({ questions, loadState, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions }),
-    [questions, loadState, loadError, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions],
+    () => ({ questions, loadState, loadError, retryQuestionLoad, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions }),
+    [questions, loadState, loadError, retryQuestionLoad, pendingQuestionIds, dataMutationPending, saveQuestion, editQuestion, removeQuestion, importQuestionBatch, clearAllQuestions],
   );
 
   return <WrongbookContext.Provider value={session}><FlowStack initial={homeScreen} /></WrongbookContext.Provider>;

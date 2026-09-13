@@ -141,18 +141,17 @@ async function installControlledStoreWrite(page: Page) {
 
 async function installControlledQuestionLoad(page: Page) {
   await page.addInitScript(() => {
-    const openRequest: Record<string, unknown> = {};
-    const getAllRequest: Record<string, unknown> = {};
-    const database = {
-      close: () => {},
-      transaction: () => ({ objectStore: () => ({ getAll: () => getAllRequest }) }),
-    };
+    let getAllRequest: Record<string, unknown> | undefined;
+    let openCount = 0;
     const control = {
+      get openCount() { return openCount; },
       succeed: () => {
+        if (!getAllRequest) throw new Error("Question load has not started");
         getAllRequest.result = [];
         (getAllRequest.onsuccess as (() => void) | undefined)?.();
       },
       fail: () => {
+        if (!getAllRequest) throw new Error("Question load has not started");
         getAllRequest.error = new DOMException("Load failed", "UnknownError");
         (getAllRequest.onerror as (() => void) | undefined)?.();
       },
@@ -161,6 +160,13 @@ async function installControlledQuestionLoad(page: Page) {
     Object.defineProperty(indexedDB, "open", {
       configurable: true,
       value: () => {
+        const openRequest: Record<string, unknown> = {};
+        getAllRequest = {};
+        openCount += 1;
+        const database = {
+          close: () => {},
+          transaction: () => ({ objectStore: () => ({ getAll: () => getAllRequest }) }),
+        };
         queueMicrotask(() => {
           openRequest.result = database;
           (openRequest.onsuccess as (() => void) | undefined)?.();
@@ -327,13 +333,36 @@ test("keeps new-question saving disabled until the initial question load succeed
   await expect(page.getByRole("button", { name: "保存错题" })).toBeEnabled();
 });
 
+test("retries a failed initial load without losing the confirmation form", async ({ page }) => {
+  await installControlledQuestionLoad(page);
+  await openManualEntry(page);
+  await page.getByLabel("识别结果").fill("加载失败时保留的题目");
+  await page.getByLabel("正确答案").fill("保留的答案");
+
+  await settleQuestionLoad(page, "fail");
+  await expect(page.getByRole("alert")).toHaveText("本地题库加载失败，请重试");
+  await expect(page.getByRole("button", { name: "重试加载题库" })).toBeVisible();
+  const attemptsBeforeRetry = await page.evaluate(() => (
+    window as typeof window & { __questionLoadControl?: { openCount: number } }
+  ).__questionLoadControl?.openCount ?? 0);
+  await page.getByRole("button", { name: "重试加载题库" }).click();
+  await expect.poll(() => page.evaluate(() => (
+    window as typeof window & { __questionLoadControl?: { openCount: number } }
+  ).__questionLoadControl?.openCount)).toBe(attemptsBeforeRetry + 1);
+  await settleQuestionLoad(page, "succeed");
+
+  await expect(page.getByLabel("识别结果")).toHaveValue("加载失败时保留的题目");
+  await expect(page.getByLabel("正确答案")).toHaveValue("保留的答案");
+  await expect(page.getByRole("button", { name: "保存错题" })).toBeEnabled();
+});
+
 test("keeps every data action disabled when the initial question load fails", async ({ page }) => {
   await installControlledQuestionLoad(page);
   await page.goto("/");
   await page.getByRole("button", { name: "数据管理" }).click();
   await settleQuestionLoad(page, "fail");
   const management = page.getByTestId("flow-current");
-  await expect(management.getByRole("alert")).toHaveText("本地题库加载失败，请刷新重试");
+  await expect(management.getByRole("alert")).toHaveText("本地题库加载失败，请重试");
   for (const name of ["生成完整备份", "分享或下载", "导入备份", "清空全部题库"]) {
     await expect(management.getByRole("button", { name })).toBeDisabled();
   }
@@ -364,6 +393,61 @@ test("uses supported Web Share for the complete backup", async ({ page }) => {
   expect(trace?.shares[0]).toMatchObject({ title: "错题集完整备份", type: "application/json" });
   expect(trace?.shares[0].name).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
   expect(JSON.parse(trace?.shares[0].text ?? "{}").questions[0]).toMatchObject({ id: "share-me", image: { type: "image/png" } });
+});
+
+test("uses Capacitor file sharing for a complete Android backup", async ({ page }) => {
+  await page.addInitScript(() => {
+    const calls: { plugin: string; method: string; options: Record<string, unknown> }[] = [];
+    Object.defineProperty(window, "androidBridge", { configurable: true, value: {} });
+    Object.defineProperty(window, "__nativeShareCalls", { configurable: true, get: () => calls });
+    Object.defineProperty(window, "Capacitor", {
+      configurable: true,
+      writable: true,
+      value: {
+        PluginHeaders: [
+          { name: "Filesystem", methods: [{ name: "writeFile", rtype: "promise" }, { name: "getUri", rtype: "promise" }] },
+          { name: "Share", methods: [{ name: "share", rtype: "promise" }] },
+        ],
+        nativePromise: async (plugin: string, method: string, options: Record<string, unknown>) => {
+          calls.push({ plugin, method, options });
+          if (plugin === "Filesystem" && method === "writeFile") return { uri: "file:///cache/cuotiji-backup.json" };
+          return {};
+        },
+      },
+    });
+  });
+  await seedQuestion(page, { id: "android-backup", prompt: "安卓原生备份题目" });
+  await page.reload();
+  await expect.poll(() => page.evaluate(() => ({
+    bridge: Boolean((window as typeof window & { androidBridge?: unknown }).androidBridge),
+    platform: (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.(),
+  }))).toEqual({ bridge: true, platform: "android" });
+  await expect.poll(() => page.evaluate(() => {
+    const capacitor = (window as typeof window & {
+      Capacitor?: { isPluginAvailable?: (name: string) => boolean; nativePromise?: unknown };
+    }).Capacitor;
+    return {
+      filesystem: capacitor?.isPluginAvailable?.("Filesystem"),
+      share: capacitor?.isPluginAvailable?.("Share"),
+      nativePromise: typeof capacitor?.nativePromise,
+    };
+  })).toEqual({ filesystem: true, share: true, nativePromise: "function" });
+  await page.getByRole("button", { name: "数据管理" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "生成完整备份" }).click();
+  await page.getByRole("button", { name: "分享或下载" }).click();
+  await expect(page.getByRole("status")).toHaveText("备份已导出");
+
+  const calls = await page.evaluate(() => (
+    window as typeof window & { __nativeShareCalls?: { plugin: string; method: string; options: Record<string, unknown> }[] }
+  ).__nativeShareCalls ?? []);
+  expect(calls.map(({ plugin, method }) => `${plugin}.${method}`)).toEqual([
+    "Filesystem.writeFile",
+    "Share.share",
+  ]);
+  expect(calls[0].options).toMatchObject({ directory: "CACHE", encoding: "utf8" });
+  expect(calls[0].options.data).toContain('"id":"android-backup"');
+  expect(calls[1].options).toMatchObject({ files: ["file:///cache/cuotiji-backup.json"], title: "错题集完整备份" });
 });
 
 test("treats an AbortError from Web Share as cancellation", async ({ page }) => {

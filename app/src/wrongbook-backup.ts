@@ -41,7 +41,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 
 function base64ToBlob(type: string, value: string): Blob {
   if (!type.startsWith("image/")) fail("备份中的图片类型无效");
-  if (!base64Pattern.test(value)) fail("备份中的图片数据无效");
+  if (!value || !base64Pattern.test(value)) fail("备份中的图片数据无效");
   let binary: string;
   try {
     binary = atob(value);

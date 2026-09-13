@@ -63,6 +63,7 @@ test("rejects invalid image MIME types and Base64", async () => {
   })]);
   await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "text/plain", base64: "aGVsbG8=" })), /图片类型无效/);
   await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "image/png", base64: "not base64" })), /图片数据无效/);
+  await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "image/png", base64: "" })), /图片数据无效/);
 });
 
 test("rejects files and exports over 100 MB before reading image bytes", async () => {
