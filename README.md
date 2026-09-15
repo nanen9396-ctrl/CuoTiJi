@@ -45,6 +45,18 @@ pnpm run native:sync
 
 Android 发布配置使用包名 `com.nanen9396.cuotiji`、最低 Android 7.0（API 24）并面向 Android 16（API 36）。运行 `pnpm run test:release` 可检查这些配置以及签名密钥忽略规则；`.jks` 与 `.keystore` 文件不得提交到 Git。正式上架的签名 AAB 需要由发布者另行保管上传密钥及密码。
 
+Windows 命令行构建需要 JDK 21、Android SDK Platform 36 与 Build Tools 36。将本机 SDK 路径写入 Git 已忽略的 `app/android/local.properties`，再执行：
+
+```powershell
+cd app
+pnpm run native:sync
+$env:JAVA_HOME = '<JDK 21 安装目录>'
+cd android
+.\gradlew.bat --no-daemon assembleDebug bundleRelease
+```
+
+Debug APK 输出到 `app/android/app/build/outputs/apk/debug/app-debug.apk`；未签名 Release AAB 输出到 `app/android/app/build/outputs/bundle/release/app-release.aab`。上架前必须使用独立上传密钥签名 AAB。Windows 模拟器测试还需要启用 [Windows Hypervisor Platform](https://developer.android.com/studio/run/emulator-acceleration#vm-windows)，启用后通常需要重启。
+
 ## 验证
 
 ```powershell

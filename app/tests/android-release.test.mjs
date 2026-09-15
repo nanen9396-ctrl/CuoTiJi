@@ -35,3 +35,25 @@ test('Android signing secrets cannot be committed accidentally', async () => {
     'Android .gitignore must actively ignore *.keystore',
   )
 })
+
+test('Gradle Wrapper uses the minimal verified release distribution', async () => {
+  const wrapperProperties = await readAndroidFile(
+    'gradle/wrapper/gradle-wrapper.properties',
+  )
+
+  assert.match(
+    wrapperProperties,
+    /^distributionUrl=https\\:\/\/downloads\.gradle\.org\/distributions\/gradle-8\.14\.3-bin\.zip$/m,
+  )
+  assert.match(
+    wrapperProperties,
+    /^distributionSha256Sum=bd71102213493060956ec229d946beee57158dbd89d0e62b91bca0fa2c5f3531$/m,
+  )
+  assert.match(wrapperProperties, /^networkTimeout=120000$/m)
+})
+
+test('Android build supports this repository Unicode path on Windows', async () => {
+  const gradleProperties = await readAndroidFile('gradle.properties')
+
+  assert.match(gradleProperties, /^android\.overridePathCheck=true$/m)
+})
