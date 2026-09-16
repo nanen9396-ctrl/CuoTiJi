@@ -11,7 +11,7 @@
     "test:ocr": "node --test --test-isolation=none tests/ocr.test.mjs",
     "test:prototype": "playwright test -c playwright.prototype.config.ts",
     "test:runtime": "playwright test",
-    "test:native": "pnpm run build && pnpm run prepare:native && node --test --test-isolation=none tests/capacitor-config.test.mjs",
+    "test:native": "pnpm run build && pnpm run prepare:native && node --test --test-isolation=none tests/capacitor-config.test.mjs tests/native-back.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:release": "node --test --test-isolation=none tests/android-release.test.mjs",
     "predev": "node scripts/check-mobile-runtime.mjs",
@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@capacitor/android": "8.5.0",
+    "@capacitor/app": "8.1.1",
     "@capacitor/core": "8.5.0",
     "@capacitor/filesystem": "8.1.3",
     "@capacitor/ios": "8.5.0",
