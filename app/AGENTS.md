@@ -69,3 +69,8 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Fixed phone chrome should not animate with pushed screens. Screen content can animate; the status bar, camera cutout, and preview chrome should stay put.
 - Keep the keyboard below the home indicator/safe area layer in z-index, and above ordinary app UI while visible.
 - Keep the home indicator as the topmost safe-area layer in the z-index above everything else in the prototype.
+
+## Product Icon Direction
+
+- The approved app icon uses a solid `#07163E` background, a simplified `#2B6CF0` camera, a `#F9D84A` lens, and bold white “错题集” below the camera.
+- Keep the icon conspicuous and minimal: no flash dot, decorative lines, gradients, textures, English subtitle, or extra symbols.
