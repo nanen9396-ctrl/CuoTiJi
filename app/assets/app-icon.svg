@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <g id="icon-background">
+    <rect width="1024" height="1024" fill="#07163E"/>
+  </g>
+  <g id="icon-foreground">
+    <path fill="#2B6CF0" d="M250 245h140l40-64h164l40 64h140c48 0 88 40 88 88v236c0 48-40 88-88 88H250c-48 0-88-40-88-88V333c0-48 40-88 88-88z"/>
+    <circle cx="512" cy="451" r="172" fill="#F9D84A"/>
+    <circle cx="512" cy="451" r="96" fill="#07163E"/>
+    <text x="512" y="858" fill="#FFFFFF" font-family="Microsoft YaHei, PingFang SC, sans-serif" font-size="142" font-weight="800" text-anchor="middle" letter-spacing="8">错题集</text>
+  </g>
+</svg>
