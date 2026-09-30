@@ -34,6 +34,44 @@ async function sampleAlpha(relativePath, points) {
   }
 }
 
+async function alphaBounds(relativePath) {
+  const dataUrl = `data:image/png;base64,${read(relativePath).toString("base64")}`;
+  const browser = await chromium.launch();
+
+  try {
+    const page = await browser.newPage();
+    return await page.evaluate(async (src) => {
+      const image = new Image();
+      image.src = src;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, image.width, image.height).data;
+      let left = image.width;
+      let top = image.height;
+      let right = -1;
+      let bottom = -1;
+
+      for (let y = 0; y < image.height; y += 1) {
+        for (let x = 0; x < image.width; x += 1) {
+          if (pixels[(y * image.width + x) * 4 + 3] === 0) continue;
+          left = Math.min(left, x);
+          top = Math.min(top, y);
+          right = Math.max(right, x);
+          bottom = Math.max(bottom, y);
+        }
+      }
+
+      return { left, top, right, bottom };
+    }, dataUrl);
+  } finally {
+    await browser.close();
+  }
+}
+
 test("master icon contains only the approved visual direction", () => {
   const svg = read("assets/app-icon.svg").toString("utf8");
   assert.match(svg, /#07163E/i);
@@ -111,4 +149,17 @@ test("full, round, and adaptive assets preserve their alpha contracts", async ()
     ),
     [0, 255],
   );
+});
+
+test("adaptive foreground artwork stays inside Android's guaranteed safe zone", async () => {
+  const bounds = await alphaBounds(
+    "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+  );
+  const safeInset = 72;
+  const safeEdge = 432 - safeInset - 1;
+
+  assert.ok(bounds.left >= safeInset, `left edge ${bounds.left} exceeds the safe zone`);
+  assert.ok(bounds.top >= safeInset, `top edge ${bounds.top} exceeds the safe zone`);
+  assert.ok(bounds.right <= safeEdge, `right edge ${bounds.right} exceeds the safe zone`);
+  assert.ok(bounds.bottom <= safeEdge, `bottom edge ${bounds.bottom} exceeds the safe zone`);
 });

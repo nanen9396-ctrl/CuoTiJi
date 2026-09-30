@@ -59,6 +59,9 @@ try {
       node.style.display = "block";
       if (options.foreground) {
         node.querySelector("#icon-background").style.display = "none";
+        node
+          .querySelector("#icon-foreground")
+          .setAttribute("transform", "translate(512 512) scale(.86) translate(-512 -512)");
       }
       if (options.round) {
         node.style.clipPath = "circle(50% at 50% 50%)";
