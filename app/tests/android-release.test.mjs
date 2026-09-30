@@ -34,6 +34,27 @@ test('Android signing secrets cannot be committed accidentally', async () => {
     activeRules.includes('*.keystore'),
     'Android .gitignore must actively ignore *.keystore',
   )
+  assert.ok(
+    activeRules.includes('keystore.properties'),
+    'Android .gitignore must actively ignore keystore.properties',
+  )
+})
+
+test('Android release bundles require external upload signing credentials', async () => {
+  const appGradle = await readAndroidFile('app/build.gradle')
+
+  assert.match(appGradle, /CUOTIJI_KEYSTORE_PROPERTIES/)
+  assert.match(appGradle, /\.android[\\/]cuotiji-upload[\\/]keystore\.properties/)
+  for (const field of ['storeFile', 'storePassword', 'keyAlias', 'keyPassword']) {
+    assert.match(appGradle, new RegExp(`keystoreProperties\\[['"]${field}['"]\\]`))
+  }
+  assert.match(
+    appGradle,
+    /new File\(keystorePropertiesFile\.parentFile, keystoreProperties\[['"]storeFile['"]\]\)/,
+  )
+  assert.match(appGradle, /signingConfigs\s*{[\s\S]*release\s*{/)
+  assert.match(appGradle, /buildTypes\s*{[\s\S]*release\s*{[\s\S]*signingConfig\s+signingConfigs\.release/)
+  assert.match(appGradle, /Release signing requires/)
 })
 
 test('Gradle Wrapper uses the minimal verified release distribution', async () => {

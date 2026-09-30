@@ -1,5 +1,29 @@
 apply plugin: 'com.android.application'
 
+def keystoreProperties = new Properties()
+def defaultKeystorePropertiesFile = new File(
+    System.getProperty('user.home'),
+    '.android/cuotiji-upload/keystore.properties'
+)
+def keystorePropertiesOverride = System.getenv('CUOTIJI_KEYSTORE_PROPERTIES')
+def keystorePropertiesFile = keystorePropertiesOverride ?
+    file(keystorePropertiesOverride) : defaultKeystorePropertiesFile
+def releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.toLowerCase().contains('release')
+}
+
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    def missingSigningProperties = [
+        'storeFile', 'storePassword', 'keyAlias', 'keyPassword'
+    ].findAll { !keystoreProperties[it]?.trim() }
+    if (missingSigningProperties) {
+        throw new GradleException(
+            "Release signing requires: ${missingSigningProperties.join(', ')}"
+        )
+    }
+}
+
 android {
     namespace = "com.nanen9396.cuotiji"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,12 +40,30 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile new File(keystorePropertiesFile.parentFile, keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+}
+
+if (!keystorePropertiesFile.exists() && releaseTaskRequested) {
+    throw new GradleException(
+        "Release signing requires ${keystorePropertiesFile}. " +
+        'Set CUOTIJI_KEYSTORE_PROPERTIES to use another private properties file.'
+    )
 }
 
 repositories {
