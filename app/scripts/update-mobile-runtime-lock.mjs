@@ -22,6 +22,7 @@ const protectedFiles = [
   "src/mobile/MobileCursor.tsx",
   "src/mobile/MobileRuntime.tsx",
   "src/mobile/MobileScroll.tsx",
+  "src/mobile/native-back.ts",
   "src/mobile/PhoneFrame.tsx",
   "src/mobile/assets.ts",
   "src/mobile/components.tsx",
