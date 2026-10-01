@@ -206,7 +206,9 @@ async function settleControlledStoreWrite(page: Page, result: "complete" | "abor
 test("shows the camera-first wrong-question library home", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
+  await expect(page).toHaveTitle("题仓");
+  await expect(page.getByRole("heading", { name: "题仓" })).toBeVisible();
+  await expect(page.getByText("拍照归档错题，按目标与科目整理，高效复习")).toBeVisible();
   await expect(page.getByRole("button", { name: "拍照录入" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "我的题库" })).toBeVisible();
   for (const title of ["考研数学", "公务员考试", "高中课程", "大学课程", "全部错题"]) {
@@ -225,7 +227,7 @@ test("generates then downloads an image-inclusive backup in two direct clicks", 
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "分享或下载" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^ticang-\d{4}-\d{2}-\d{2}\.ticang\.json$/);
 });
 
 test("imports valid records and reports skipped duplicate IDs", async ({ page }) => {
@@ -243,6 +245,21 @@ test("imports valid records and reports skipped duplicate IDs", async ({ page })
   };
   await page.getByTestId("backup-input").setInputFiles({ name: "backup.cuotiji.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(document)) });
   await expect(page.getByRole("status")).toContainText("新增 1 道，跳过 1 道");
+});
+
+test("imports ticang version 1 backups", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "数据管理" }).click();
+  const document = {
+    format: "ticang",
+    version: 1,
+    exportedAt: "2026-08-24T00:00:00.000Z",
+    questions: [
+      { id: "ticang-import", prompt: "题仓导入题目", answer: "", target: "高中课程", subject: "物理", questionType: "选择题", note: "", createdAt: "2026-08-24T00:00:00.000Z", image: { type: "image/png", base64: tinyPng.toString("base64") } },
+    ],
+  };
+  await page.getByTestId("backup-input").setInputFiles({ name: "backup.ticang.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(document)) });
+  await expect(page.getByRole("status")).toContainText("新增 1 道，跳过 0 道");
 });
 
 test("rejects invalid imports and double-confirms clear-all", async ({ page }) => {
@@ -390,8 +407,9 @@ test("uses supported Web Share for the complete backup", async ({ page }) => {
   const trace = await page.evaluate(() => (window as typeof window & { __shareTrace?: { canShareCalls: number; shares: { title: string; name: string; type: string; text: string }[] } }).__shareTrace);
   expect(trace?.canShareCalls).toBe(1);
   expect(trace?.shares).toHaveLength(1);
-  expect(trace?.shares[0]).toMatchObject({ title: "错题集完整备份", type: "application/json" });
-  expect(trace?.shares[0].name).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+  expect(trace?.shares[0]).toMatchObject({ title: "题仓完整备份", type: "application/json" });
+  expect(trace?.shares[0].name).toMatch(/^ticang-\d{4}-\d{2}-\d{2}\.ticang\.json$/);
+  expect(JSON.parse(trace?.shares[0].text ?? "{}").format).toBe("ticang");
   expect(JSON.parse(trace?.shares[0].text ?? "{}").questions[0]).toMatchObject({ id: "share-me", image: { type: "image/png" } });
 });
 
@@ -410,7 +428,7 @@ test("uses Capacitor file sharing for a complete Android backup", async ({ page 
         ],
         nativePromise: async (plugin: string, method: string, options: Record<string, unknown>) => {
           calls.push({ plugin, method, options });
-          if (plugin === "Filesystem" && method === "writeFile") return { uri: "file:///cache/cuotiji-backup.json" };
+          if (plugin === "Filesystem" && method === "writeFile") return { uri: "file:///cache/ticang-backup.json" };
           return {};
         },
       },
@@ -447,7 +465,7 @@ test("uses Capacitor file sharing for a complete Android backup", async ({ page 
   ]);
   expect(calls[0].options).toMatchObject({ directory: "CACHE", encoding: "utf8" });
   expect(calls[0].options.data).toContain('"id":"android-backup"');
-  expect(calls[1].options).toMatchObject({ files: ["file:///cache/cuotiji-backup.json"], title: "错题集完整备份" });
+  expect(calls[1].options).toMatchObject({ files: ["file:///cache/ticang-backup.json"], title: "题仓完整备份", dialogTitle: "分享或保存题仓备份" });
 });
 
 test("treats an AbortError from Web Share as cancellation", async ({ page }) => {
@@ -512,7 +530,7 @@ test("downloads and revokes the object URL when canShare rejects files", async (
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "分享或下载" }).click();
   const download = await downloadPromise;
-  expect(download.suggestedFilename()).toMatch(/^cuotiji-\d{4}-\d{2}-\d{2}\.cuotiji\.json$/);
+  expect(download.suggestedFilename()).toMatch(/^ticang-\d{4}-\d{2}-\d{2}\.ticang\.json$/);
   await expect.poll(() => page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace)).toMatchObject({ shareCalls: 0, created: [expect.any(String)], revoked: [expect.any(String)] });
   const trace = await page.evaluate(() => (window as typeof window & { __fallbackTrace?: { created: string[]; revoked: string[]; shareCalls: number } }).__fallbackTrace);
   expect(trace?.revoked).toEqual(trace?.created);
@@ -586,7 +604,7 @@ test("renders the production app full-screen without visible preview chrome", as
   await page.goto("/");
   await page.evaluate(() => { document.documentElement.dataset.nativeShell = "true"; });
 
-  await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "题仓" })).toBeVisible();
   await expect(page.getByTestId("device-picker")).toBeHidden();
   const frame = await page.getByTestId("phone-frame").evaluate((element) => {
     const bounds = element.getBoundingClientRect();
@@ -1001,7 +1019,7 @@ test("ignores a late OCR result after leaving the scan screen", async ({ page })
   await page.getByRole("button", { name: "返回" }).click();
 
   await page.waitForTimeout(400);
-  await expect(page.getByRole("heading", { name: "错题集" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "题仓" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "确认错题" })).toHaveCount(0);
   expect(await page.evaluate(() => (window as typeof window & { __ocrAborted?: boolean }).__ocrAborted)).toBe(true);
 });

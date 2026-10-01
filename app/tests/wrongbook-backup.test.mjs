@@ -17,12 +17,25 @@ const question = {
 
 test("round-trips every question field and original image", async () => {
   const encoded = await backup.createBackupBlob([question], new Date("2026-08-24T01:00:00.000Z"));
+  const encodedDocument = JSON.parse(await encoded.text());
   const [restored] = await backup.parseBackupFile(encoded);
 
   assert.equal(encoded.type, "application/json");
+  assert.equal(encodedDocument.format, "ticang");
   assert.deepEqual({ ...restored, image: undefined }, { ...question, image: undefined });
   assert.equal(restored.image.type, "image/png");
   assert.deepEqual(new Uint8Array(await restored.image.arrayBuffer()), Uint8Array.from([137, 80, 78, 71]));
+});
+
+test("imports legacy cuotiji version 1 backups", async () => {
+  const legacy = new Blob([JSON.stringify({
+    format: "cuotiji",
+    version: 1,
+    exportedAt: question.createdAt,
+    questions: [{ ...question, image: { type: "image/png", base64: "iVBORw==" } }],
+  })]);
+  const [restored] = await backup.parseBackupFile(legacy);
+  assert.equal(restored.id, question.id);
 });
 
 test("rejects unknown backup versions", async () => {

@@ -8,12 +8,13 @@ type BackupQuestion = Omit<StoredQuestion, "image"> & {
 };
 
 type BackupDocument = {
-  format: "cuotiji";
+  format: "ticang";
   version: 1;
   exportedAt: string;
   questions: BackupQuestion[];
 };
 
+const acceptedBackupFormats = new Set(["ticang", "cuotiji"]);
 const base64Pattern = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function fail(message: string): never {
@@ -91,7 +92,7 @@ export async function createBackupBlob(
     });
   }
   const document: BackupDocument = {
-    format: "cuotiji",
+    format: "ticang",
     version: 1,
     exportedAt: exportedAt.toISOString(),
     questions: encodedQuestions,
@@ -109,7 +110,7 @@ export async function parseBackupFile(file: Pick<Blob, "size" | "text">): Promis
   } catch {
     fail("备份文件不是有效的 JSON");
   }
-  if (!isRecord(value) || value.format !== "cuotiji") fail("不是错题集备份文件");
+  if (!isRecord(value) || !acceptedBackupFormats.has(value.format as string)) fail("不是题仓备份文件");
   if (value.version !== 1) fail("不支持的备份版本");
   if (!isIsoTimestamp(value.exportedAt) || !Array.isArray(value.questions)) {
     fail("备份文件结构无效");

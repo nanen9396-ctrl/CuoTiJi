@@ -675,7 +675,7 @@ function DataManagement() {
     try {
       const blob = await createBackupBlob(questions);
       const date = new Date().toISOString().slice(0, 10);
-      setBackupFile(new File([blob], `cuotiji-${date}.cuotiji.json`, { type: "application/json" }));
+      setBackupFile(new File([blob], `ticang-${date}.ticang.json`, { type: "application/json" }));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "备份生成失败，请重试");
     } finally {
@@ -687,7 +687,7 @@ function DataManagement() {
     if (controlsDisabled || !backupFile) return;
     clearFeedback();
     setBusy(true);
-    const shareData = { files: [backupFile], title: "错题集完整备份" };
+    const shareData = { files: [backupFile], title: "题仓完整备份" };
     try {
       if (Capacitor.isNativePlatform()) {
         const { uri } = await Filesystem.writeFile({
@@ -698,8 +698,8 @@ function DataManagement() {
         });
         await Share.share({
           files: [uri],
-          title: "错题集完整备份",
-          dialogTitle: "分享或保存错题集备份",
+          title: "题仓完整备份",
+          dialogTitle: "分享或保存题仓备份",
         });
       } else if (navigator.share && (!navigator.canShare || navigator.canShare(shareData))) {
         await navigator.share(shareData);
@@ -794,7 +794,7 @@ function HomeView({ flow }: { flow: FlowControls }) {
   return (
     <MobileScroll className="app-screen">
       <main className="home-screen">
-        <header className="home-intro"><h1>错题集</h1><p>拍照录入错题，按目标与科目分类整理，高效复习</p></header>
+        <header className="home-intro"><h1>题仓</h1><p>拍照归档错题，按目标与科目整理，高效复习</p></header>
         <button className="capture-button" type="button" aria-label="拍照录入" onClick={() => flow.push(scanScreen())}>
           <span className="capture-icon" aria-hidden="true"><CameraIcon /></span>
           <span className="capture-divider" aria-hidden="true" />
