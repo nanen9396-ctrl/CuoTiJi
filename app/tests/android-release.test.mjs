@@ -14,7 +14,7 @@ test('Android release identity and SDK levels stay store-ready', async () => {
     readAndroidFile('variables.gradle'),
   ])
 
-  assert.match(appGradle, /applicationId\s+["']com\.nanen9396\.cuotiji["']/)
+  assert.match(appGradle, /applicationId\s+["']com\.nanen9396\.ticang["']/)
   assert.match(appGradle, /versionCode\s+1\b/)
   assert.match(appGradle, /versionName\s+["']1\.0["']/)
   assert.match(variablesGradle, /minSdkVersion\s*=\s*24\b/)

@@ -1,4 +1,4 @@
-package com.nanen9396.cuotiji;
+package com.nanen9396.ticang;
 
 import com.getcapacitor.BridgeActivity;
 

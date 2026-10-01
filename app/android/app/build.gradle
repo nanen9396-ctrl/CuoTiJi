@@ -25,10 +25,10 @@ if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "com.nanen9396.cuotiji"
+    namespace = "com.nanen9396.ticang"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.nanen9396.cuotiji"
+        applicationId "com.nanen9396.ticang"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
