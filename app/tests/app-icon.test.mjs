@@ -164,6 +164,10 @@ test("adaptive foreground artwork stays inside Android's guaranteed safe zone", 
   const safeInset = 72;
   const safeEdge = 432 - safeInset - 1;
 
+  assert.ok(
+    bounds.right >= bounds.left && bounds.bottom >= bounds.top,
+    "adaptive foreground contains no non-white artwork",
+  );
   assert.ok(bounds.left >= safeInset, `left edge ${bounds.left} exceeds the safe zone`);
   assert.ok(bounds.top >= safeInset, `top edge ${bounds.top} exceeds the safe zone`);
   assert.ok(bounds.right <= safeEdge, `right edge ${bounds.right} exceeds the safe zone`);
