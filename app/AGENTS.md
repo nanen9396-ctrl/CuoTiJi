@@ -72,5 +72,7 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 
 ## Product Icon Direction
 
-- The approved app icon uses a solid `#07163E` background, a simplified `#2B6CF0` camera, a `#F9D84A` lens, and bold white “错题集” below the camera.
-- Keep the icon conspicuous and minimal: no flash dot, decorative lines, gradients, textures, English subtitle, or extra symbols.
+- The approved brand name is “题仓”; the home subtitle is “拍照归档错题，按目标与科目整理，高效复习”.
+- The approved icon source is `docs/superpowers/specs/assets/ticang-icon-approved.png`: a semi-realistic blue book-granary on a clean white background, with warm yellow structural accents and vertical white “题仓” in the dark central doorway.
+- Preserve the book-page doors, restrained wood detail, white background, clear small-size silhouette, and professional learning-tool tone.
+- Do not add a camera, English subtitle, graduation cap, formulas, wheat, people, animals, landscape, or unrelated decoration.
