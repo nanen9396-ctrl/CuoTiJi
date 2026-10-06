@@ -5,7 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const svg = await readFile(path.join(root, "assets/app-icon.svg"), "utf8");
+const master = await readFile(path.join(
+  root,
+  "docs/superpowers/specs/assets/ticang-icon-approved.png",
+));
+const source = `data:image/png;base64,${master.toString("base64")}`;
 const densities = [
   ["mdpi", 48, 108],
   ["hdpi", 72, 162],
@@ -43,34 +47,16 @@ try {
     const page = await browser.newPage({
       viewport: { width: target.size, height: target.size },
     });
-    await page.setContent(`<style>html,body{margin:0;background:transparent}</style>${svg}`);
-
-    const hasFont = await page.evaluate(() =>
-      document.fonts.check('800 142px "Microsoft YaHei"'),
-    );
-    if (!hasFont) {
-      throw new Error("Microsoft YaHei is required to generate the approved Chinese wordmark");
-    }
-
-    const icon = page.locator("svg");
-    await icon.evaluate((node, options) => {
-      node.setAttribute("width", String(options.size));
-      node.setAttribute("height", String(options.size));
-      node.style.display = "block";
-      if (options.foreground) {
-        node.querySelector("#icon-background").style.display = "none";
-        node
-          .querySelector("#icon-foreground")
-          .setAttribute("transform", "translate(512 512) scale(.86) translate(-512 -512)");
-      }
-      if (options.round) {
-        node.style.clipPath = "circle(50% at 50% 50%)";
-      }
-    }, target);
+    await page.setContent(`<style>
+      html,body{margin:0;width:100%;height:100%;background:transparent}
+      body{display:grid;place-items:center}
+      img{display:block;width:${target.foreground ? "72%" : "100%"};height:${target.foreground ? "72%" : "100%"};${target.round ? "clip-path:circle(50%)" : ""}}
+    </style><img src="${source}">`);
+    await page.locator("img").evaluate((image) => image.decode());
 
     const output = path.join(root, target.output);
     await mkdir(path.dirname(output), { recursive: true });
-    await icon.screenshot({
+    await page.screenshot({
       path: output,
       omitBackground: Boolean(target.foreground || target.round),
     });
@@ -80,4 +66,4 @@ try {
   await browser.close();
 }
 
-console.log(`Generated ${targets.length} app icon assets from assets/app-icon.svg.`);
+console.log(`Generated ${targets.length} app icon assets from the approved PNG master.`);

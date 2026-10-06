@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { chromium } from "@playwright/test";
@@ -34,7 +35,7 @@ async function sampleAlpha(relativePath, points) {
   }
 }
 
-async function alphaBounds(relativePath) {
+async function artworkBounds(relativePath) {
   const dataUrl = `data:image/png;base64,${read(relativePath).toString("base64")}`;
   const browser = await chromium.launch();
 
@@ -57,7 +58,9 @@ async function alphaBounds(relativePath) {
 
       for (let y = 0; y < image.height; y += 1) {
         for (let x = 0; x < image.width; x += 1) {
-          if (pixels[(y * image.width + x) * 4 + 3] === 0) continue;
+          const index = (y * image.width + x) * 4;
+          if (pixels[index + 3] === 0) continue;
+          if (pixels[index] >= 245 && pixels[index + 1] >= 245 && pixels[index + 2] >= 245) continue;
           left = Math.min(left, x);
           top = Math.min(top, y);
           right = Math.max(right, x);
@@ -72,13 +75,16 @@ async function alphaBounds(relativePath) {
   }
 }
 
-test("master icon contains only the approved visual direction", () => {
-  const svg = read("assets/app-icon.svg").toString("utf8");
-  assert.match(svg, /#07163E/i);
-  assert.match(svg, /#2B6CF0/i);
-  assert.match(svg, /#F9D84A/i);
-  assert.match(svg, />错题集<\/text>/);
-  assert.doesNotMatch(svg, /gradient|filter|shadow/i);
+test("uses the approved Ticang icon master", () => {
+  const master = read("docs/superpowers/specs/assets/ticang-icon-approved.png");
+  assert.deepEqual(pngSize("docs/superpowers/specs/assets/ticang-icon-approved.png"), {
+    width: 1254,
+    height: 1254,
+  });
+  assert.equal(
+    createHash("sha256").update(master).digest("hex").toUpperCase(),
+    "B2CF4F9229D7EFF13FFD5F6D2455BA6073CCB87B5C90C3A085A14CEC04E7A033",
+  );
 });
 
 test("iOS and Android launcher assets have exact platform dimensions", () => {
@@ -109,7 +115,7 @@ test("iOS and Android launcher assets have exact platform dimensions", () => {
 
 test("adaptive icon uses the approved solid background and generated foreground", () => {
   const colors = read("android/app/src/main/res/values/ic_launcher_background.xml").toString("utf8");
-  assert.match(colors, /<color name="ic_launcher_background">#07163E<\/color>/);
+  assert.match(colors, /<color name="ic_launcher_background">#FFFFFF<\/color>/);
 
   for (const file of ["ic_launcher.xml", "ic_launcher_round.xml"]) {
     const xml = read(`android/app/src/main/res/mipmap-anydpi-v26/${file}`).toString("utf8");
@@ -152,7 +158,7 @@ test("full, round, and adaptive assets preserve their alpha contracts", async ()
 });
 
 test("adaptive foreground artwork stays inside Android's guaranteed safe zone", async () => {
-  const bounds = await alphaBounds(
+  const bounds = await artworkBounds(
     "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
   );
   const safeInset = 72;
