@@ -50,7 +50,7 @@ try {
     await page.setContent(`<style>
       html,body{margin:0;width:100%;height:100%;background:transparent}
       body{display:grid;place-items:center}
-      img{display:block;width:${target.foreground ? "72%" : "100%"};height:${target.foreground ? "72%" : "100%"};${target.round ? "clip-path:circle(50%)" : ""}}
+      img{display:block;width:${target.foreground ? "52%" : "100%"};height:${target.foreground ? "52%" : "100%"};${target.round ? "clip-path:circle(50%)" : ""}}
     </style><img src="${source}">`);
     await page.locator("img").evaluate((image) => image.decode());
 

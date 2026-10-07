@@ -25,7 +25,7 @@ test("defines a stable Capacitor app identity and both native projects", () => {
   assert.match(privacyManifest, /NSPrivacyAccessedAPICategoryFileTimestamp/);
   assert.match(privacyManifest, /<string>C617\.1<\/string>/);
   const xcodeProject = readFileSync(new URL("../ios/App/App.xcodeproj/project.pbxproj", import.meta.url), "utf8");
-  assert.match(xcodeProject, /PRODUCT_BUNDLE_IDENTIFIER = com\.nanen9396\.ticang;/);
+  assert.equal(xcodeProject.match(/PRODUCT_BUNDLE_IDENTIFIER = com\.nanen9396\.ticang;/g)?.length, 2);
   assert.match(xcodeProject, /PrivacyInfo\.xcprivacy in Resources/);
   const swiftPackage = readFileSync(new URL("../ios/App/CapApp-SPM/Package.swift", import.meta.url), "utf8");
   assert.doesNotMatch(swiftPackage, /path:\s*"[^"]*\\/);

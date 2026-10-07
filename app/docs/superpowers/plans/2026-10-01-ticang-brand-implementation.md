@@ -336,7 +336,7 @@ test("uses the approved Ticang icon master", () => {
 });
 ```
 
-把 adaptive background 断言改为 `#FFFFFF`。将 safe-zone 边界函数改为忽略接近白色的背景像素，只统计满足 `r < 245 || g < 245 || b < 245` 的主体像素；继续要求主体边界位于 432 px 前景图的 `72..359` 安全区。
+把 adaptive background 断言改为 `#FFFFFF`。将 safe-zone 检查改为忽略接近白色的背景像素，只统计满足 `r < 245 || g < 245 || b < 245` 的主体像素；要求主体最大径向距离不超过 Android 108 dp 图层中心直径 66 dp 的圆形安全区（432 px 前景图的半径为 132 px）。
 
 - [ ] **Step 2: 运行图标测试并确认失败**
 
@@ -360,7 +360,7 @@ const master = await readFile(path.join(
 const source = `data:image/png;base64,${master.toString("base64")}`;
 ```
 
-对每个目标创建透明页面并渲染一个居中的 `<img>`：常规和圆形图标使用 `100%` 尺寸，圆形目标使用 `clip-path: circle(50%)`；adaptive foreground 使用 `80%` 尺寸和透明页面，使母版自身的白色背景与 `#FFFFFF` adaptive background 无缝衔接，同时把非白色粮仓主体留在安全区。继续沿用现有 target 列表和 Playwright 截图，不增加图像依赖。
+对每个目标创建透明页面并渲染一个居中的 `<img>`：常规和圆形图标使用 `100%` 尺寸，圆形目标使用 `clip-path: circle(50%)`；adaptive foreground 使用 `52%` 尺寸和透明页面，使母版自身的白色背景与 `#FFFFFF` adaptive background 无缝衔接，同时把非白色粮仓主体留在 66 dp 圆形安全区。继续沿用现有 target 列表和 Playwright 截图，不增加图像依赖。
 
 把 `android/app/src/main/res/values/ic_launcher_background.xml` 改为：
 
@@ -500,4 +500,3 @@ git commit -m "docs: record Ticang brand direction"
 ```
 
 提交后再次运行 `git status --short --branch`，Expected: 工作树干净，分支仅显示领先远端的预期提交数。
-

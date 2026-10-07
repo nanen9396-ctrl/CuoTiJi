@@ -35,7 +35,7 @@ async function sampleAlpha(relativePath, points) {
   }
 }
 
-async function artworkBounds(relativePath) {
+async function artworkMetrics(relativePath) {
   const dataUrl = `data:image/png;base64,${read(relativePath).toString("base64")}`;
   const browser = await chromium.launch();
 
@@ -55,6 +55,9 @@ async function artworkBounds(relativePath) {
       let top = image.height;
       let right = -1;
       let bottom = -1;
+      let maxRadius = 0;
+      const centerX = (image.width - 1) / 2;
+      const centerY = (image.height - 1) / 2;
 
       for (let y = 0; y < image.height; y += 1) {
         for (let x = 0; x < image.width; x += 1) {
@@ -65,10 +68,11 @@ async function artworkBounds(relativePath) {
           top = Math.min(top, y);
           right = Math.max(right, x);
           bottom = Math.max(bottom, y);
+          maxRadius = Math.max(maxRadius, Math.hypot(x - centerX, y - centerY));
         }
       }
 
-      return { left, top, right, bottom };
+      return { bounds: { left, top, right, bottom }, maxRadius, width: image.width, height: image.height };
     }, dataUrl);
   } finally {
     await browser.close();
@@ -158,18 +162,15 @@ test("full, round, and adaptive assets preserve their alpha contracts", async ()
 });
 
 test("adaptive foreground artwork stays inside Android's guaranteed safe zone", async () => {
-  const bounds = await artworkBounds(
+  const { bounds, maxRadius, width, height } = await artworkMetrics(
     "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
   );
-  const safeInset = 72;
-  const safeEdge = 432 - safeInset - 1;
 
   assert.ok(
     bounds.right >= bounds.left && bounds.bottom >= bounds.top,
     "adaptive foreground contains no non-white artwork",
   );
-  assert.ok(bounds.left >= safeInset, `left edge ${bounds.left} exceeds the safe zone`);
-  assert.ok(bounds.top >= safeInset, `top edge ${bounds.top} exceeds the safe zone`);
-  assert.ok(bounds.right <= safeEdge, `right edge ${bounds.right} exceeds the safe zone`);
-  assert.ok(bounds.bottom <= safeEdge, `bottom edge ${bounds.bottom} exceeds the safe zone`);
+  assert.equal(width, height);
+  const safeRadius = width * 66 / 108 / 2;
+  assert.ok(maxRadius <= safeRadius, `artwork radius ${maxRadius} exceeds safe radius ${safeRadius}`);
 });
