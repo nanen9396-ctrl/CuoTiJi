@@ -1,6 +1,22 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
+
+test("ships every prepared OCR resource unchanged in web and native builds", () => {
+  const sourceDirectory = fileURLToPath(new URL("../public/ocr/v1/", import.meta.url));
+  const files = readdirSync(sourceDirectory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.relative(sourceDirectory, path.join(entry.parentPath, entry.name)).replaceAll("\\", "/"));
+  assert.equal(files.length >= 18, true);
+  for (const file of files) {
+    const source = readFileSync(new URL(`../public/ocr/v1/${file}`, import.meta.url));
+    for (const build of ["client", "native"]) {
+      assert.deepEqual(readFileSync(new URL(`../dist/${build}/ocr/v1/${file}`, import.meta.url)), source, `${build}/${file}`);
+    }
+  }
+});
 
 test("defines a stable Capacitor app identity and both native projects", () => {
   const config = readFileSync(new URL("../capacitor.config.ts", import.meta.url), "utf8");

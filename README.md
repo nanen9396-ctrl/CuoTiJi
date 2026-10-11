@@ -21,7 +21,13 @@ pnpm dev
 
 浏览器访问 `http://localhost:5173`。
 
-首次识别需要联网下载中文 OCR 模型，之后浏览器可复用缓存。题目图片与识别结果只保存在当前浏览器中，不会上传到应用服务器。单张图片须为常见图片格式且不超过 10 MB。
+Android 原生安装包内置中英文 OCR 模型与识别引擎，首次识别不需要从公网下载资源。网页版仍需先从本站加载页面和同源识别资源，并不承诺网页可在完全断网时启动。题目图片与识别结果只保存在当前设备/浏览器中，不会上传到应用服务器。单张图片须为常见图片格式且不超过 10 MB。
+
+OCR 资源固定为 Tesseract.js / core 7.0.0 与中英文 `4.0.0_best_int` 模型。开发、构建和浏览器测试前会自动从锁定依赖生成 `app/public/ocr/v1/`（约 19.5 MB 未压缩资源，实际安装包增量取决于打包压缩），不从 CDN 动态加载识别引擎，也不复用旧的 IndexedDB 模型缓存。模型在构建时解压为 `.traineddata`，避免 Android 自动去除 `.gz` 后缀导致加载失败。首次安装开发依赖仍需联网；资源生成脚本不需要联网。若直接运行 Vite CLI，应先执行 `pnpm run prepare:ocr`。
+
+请使用 pnpm 安装依赖：`pnpm install --frozen-lockfile` 会自动应用 `app/patches/tesseract.js@7.0.0.patch`，修复上游初始化失败后一直等待的问题，并释放失败的 worker。不要绕过 pnpm 用其他包管理器安装，否则模型加载失败的恢复行为没有保证。`pnpm run test:prototype` 包含真实 OCR 冷启动和模型加载失败后重试检查，不只是模拟识别结果。
+
+当前仅验证印刷中英文的本地文字识别，手写和复杂公式仍需人工修正；图表通过原图保留，不是图片理解或 AI 解题。OCR 资源来源与已保留的上游声明见 [`app/resources/ocr-NOTICE.md`](app/resources/ocr-NOTICE.md)，完整商业再分发许可审查仍需另行完成。
 
 ## 数据管理
 
@@ -56,6 +62,8 @@ cd android
 ```
 
 Debug APK 输出到 `app/android/app/build/outputs/apk/debug/app-debug.apk`；签名后的 Release AAB 输出到 `app/android/app/build/outputs/bundle/release/app-release.aab`。Windows 模拟器测试还需要启用 [Windows Hypervisor Platform](https://developer.android.com/studio/run/emulator-acceleration#vm-windows)，启用后通常需要重启。
+
+构建 `assembleRelease bundleRelease` 后，在 `app` 目录运行 `.\scripts\verify-android-ocr.ps1`，逐文件核验 APK/AAB 中的识别资源和许可声明与准备目录一致。它验证最终安装包，不替代相机、飞行模式首次识别、系统分享与备份恢复的真机验收。
 
 ## 验证
 

@@ -15,8 +15,23 @@ const defaultFactory: OcrWorkerFactory = (onProgress) => createWorker(
   ["chi_sim", "eng"],
   OEM.LSTM_ONLY,
   {
+    workerPath: "/ocr/v1/worker.min.js",
+    corePath: "/ocr/v1/core",
+    langPath: "/ocr/v1/lang",
+    workerBlobURL: false,
+    gzip: false,
+    // ponytail: models ship with the app; avoid stale/duplicate IndexedDB model caches.
+    cacheMethod: "none",
+    // Initialization/recognition promises report errors to the scan screen.
+    errorHandler: () => {},
     logger: (message: LoggerMessage) => onProgress({
-      status: message.status,
+      status: ({
+        "loading tesseract core": "加载本地识别引擎",
+        "initializing tesseract": "初始化识别引擎",
+        "loading language traineddata": "加载本地中英文模型",
+        "initializing api": "准备文字识别",
+        "recognizing text": "正在识别文字",
+      } as Record<string, string>)[message.status] ?? "正在准备识别",
       progress: message.progress,
     }),
   },

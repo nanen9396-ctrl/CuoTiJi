@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  tesseract.js@7.0.0: 101714d9785f9471e21a72b642f7c678e398897d4550f05037882f48cdcf4a00
+
 importers:
 
   .:
@@ -52,7 +55,7 @@ importers:
         version: 19.2.7(react@19.2.7)
       tesseract.js:
         specifier: 7.0.0
-        version: 7.0.0
+        version: 7.0.0(patch_hash=101714d9785f9471e21a72b642f7c678e398897d4550f05037882f48cdcf4a00)
     devDependencies:
       '@capacitor/cli':
         specifier: 8.5.0
@@ -60,6 +63,12 @@ importers:
       '@playwright/test':
         specifier: 1.61.1
         version: 1.61.1
+      '@tesseract.js-data/chi_sim':
+        specifier: 1.0.0
+        version: 1.0.0
+      '@tesseract.js-data/eng':
+        specifier: 1.0.0
+        version: 1.0.0
       '@types/react':
         specifier: 19.2.17
         version: 19.2.17
@@ -573,6 +582,12 @@ packages:
 
   '@rolldown/pluginutils@1.0.1':
     resolution: {integrity: sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw==}
+
+  '@tesseract.js-data/chi_sim@1.0.0':
+    resolution: {integrity: sha512-iuErURkPbECDUazgsLn/r3c+tU2y5o5S/w14d0A/YiagfsjYyZKgTo75RUpsGJ311qtu0dIX4hqnXAAjmqf2CA==}
+
+  '@tesseract.js-data/eng@1.0.0':
+    resolution: {integrity: sha512-mbTumm6KQPUHyzTPQaF3ObXYnx0SqqfV2nabqFVQBwD6Kl7PhGSLSzOlfFTWy0P3BjghaSKA2W9GB19Jk+ZcTg==}
 
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
@@ -1896,6 +1911,10 @@ snapshots:
 
   '@rolldown/pluginutils@1.0.1': {}
 
+  '@tesseract.js-data/chi_sim@1.0.0': {}
+
+  '@tesseract.js-data/eng@1.0.0': {}
+
   '@tybys/wasm-util@0.10.3':
     dependencies:
       tslib: 2.8.1
@@ -2420,7 +2439,7 @@ snapshots:
 
   tesseract.js-core@7.0.0: {}
 
-  tesseract.js@7.0.0:
+  tesseract.js@7.0.0(patch_hash=101714d9785f9471e21a72b642f7c678e398897d4550f05037882f48cdcf4a00):
     dependencies:
       bmp-js: 0.1.0
       idb-keyval: 6.3.0
