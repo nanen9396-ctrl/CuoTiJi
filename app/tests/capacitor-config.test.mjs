@@ -4,6 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+test("makes the system camera discoverable on Android 11+ without broad permissions", () => {
+  const manifest = readFileSync(new URL("../android/app/src/main/AndroidManifest.xml", import.meta.url), "utf8");
+  const queries = manifest.match(/<queries\b[^>]*>([\s\S]*?)<\/queries>/)?.[1] ?? "";
+  assert.match(queries, /<intent>\s*<action android:name="android\.media\.action\.IMAGE_CAPTURE"\s*\/>\s*<\/intent>/);
+  assert.doesNotMatch(manifest, /<uses-permission[^>]*android:name="android\.permission\.(?:QUERY_ALL_PACKAGES|CAMERA|READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE)"/);
+});
+
 test("ships every prepared OCR resource unchanged in web and native builds", () => {
   const sourceDirectory = fileURLToPath(new URL("../public/ocr/v1/", import.meta.url));
   const files = readdirSync(sourceDirectory, { recursive: true, withFileTypes: true })
