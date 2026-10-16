@@ -27,6 +27,27 @@ test("round-trips every question field and original image", async () => {
   assert.deepEqual(new Uint8Array(await restored.image.arrayBuffer()), Uint8Array.from([137, 80, 78, 71]));
 });
 
+test("preserves custom, unclassified, and legacy classifications with original images", async () => {
+  const questions = [
+    ["教师资格证", "教育知识与能力"],
+    ["待分类", "待分类"],
+    ["考研数学", "高等数学"],
+  ].map(([target, subject], index) => ({ ...question, id: `question-${index + 1}`, target, subject }));
+  const encoded = await backup.createBackupBlob(questions);
+  const restored = await backup.parseBackupFile(encoded);
+
+  assert.equal(JSON.parse(await encoded.text()).version, 1);
+  assert.equal(restored.length, questions.length);
+  for (const [index, original] of questions.entries()) {
+    assert.deepEqual({ ...restored[index], image: undefined }, { ...original, image: undefined });
+    assert.equal(restored[index].image.type, original.image.type);
+    assert.deepEqual(
+      new Uint8Array(await restored[index].image.arrayBuffer()),
+      new Uint8Array(await original.image.arrayBuffer()),
+    );
+  }
+});
+
 test("imports legacy cuotiji version 1 backups", async () => {
   const legacy = new Blob([JSON.stringify({
     format: "cuotiji",

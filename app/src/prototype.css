@@ -151,6 +151,7 @@ button {
 }
 
 .library-copy strong {
+  overflow-wrap: anywhere;
   font-size: 19px;
   line-height: 1.2;
   font-weight: 760;
@@ -177,6 +178,10 @@ button {
 }
 
 .app-header h1 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   margin: 0;
   font-size: 18px;
   line-height: 1;
@@ -419,7 +424,10 @@ button {
 
 .choice-chip {
   min-height: 38px;
-  padding: 0 14px;
+  padding: 8px 14px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
   border: 1px solid #dde4f0;
   border-radius: 12px;
   color: #526079;
@@ -440,7 +448,8 @@ button {
   display: block;
 }
 
-.text-field textarea {
+.text-field textarea,
+.classification-input {
   width: 100%;
   padding: 13px 14px;
   border: 1px solid #dde4f0;
@@ -454,9 +463,21 @@ button {
   line-height: 1.55;
 }
 
-.text-field textarea:focus {
+.text-field textarea:focus,
+.classification-input:focus {
   outline: 3px solid rgba(36, 100, 235, 0.16);
   border-color: #2464eb;
+}
+
+.classification-input {
+  margin-top: 12px;
+  min-height: 48px;
+}
+
+.classification-input:disabled,
+.choice-chip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .primary-button {
@@ -508,6 +529,8 @@ button {
 }
 
 .success-content p {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   margin: 12px 0 8px;
   color: #6d7890;
   font-size: 15px;
@@ -618,7 +641,7 @@ button {
   padding: 16px 2px;
   border-bottom: 1px solid #e3e8f1;
   display: grid;
-  grid-template-columns: 34px 1fr;
+  grid-template-columns: 34px minmax(0, 1fr);
   gap: 12px;
   box-sizing: border-box;
 }
@@ -641,6 +664,8 @@ button.question-row {
 }
 
 .question-row div {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: grid;
   gap: 9px;
 }
@@ -699,14 +724,22 @@ button.question-row {
 
 .review-meta {
   display: flex;
+  gap: 12px;
   justify-content: space-between;
   color: #6f7b93;
   font-size: 13px;
 }
 
 .review-meta span:first-child {
+  flex-shrink: 0;
   color: #2464eb;
   font-weight: 800;
+}
+
+.review-meta span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 
 .review-card {

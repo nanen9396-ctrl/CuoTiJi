@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -24,15 +25,17 @@ import {
 import { Capacitor } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
-import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, type FlowControls, type FlowScreen } from "./mobile";
+import { FlowStack, KeyboardInput, KeyboardTextarea, MobileScroll, useFlow, useKeyboard, type FlowControls, type FlowScreen } from "./mobile";
 import type { OcrProgress } from "./ocr";
 import { createBackupBlob, parseBackupFile } from "./wrongbook-backup";
 import {
   classifyQuestion,
   libraryGroupsWithCounts,
   makeReviewQueue,
+  normalizeClassification,
   questionTypes,
   questionsForGroup,
+  UNCATEGORIZED,
   type LibraryGroup,
   type StoredQuestion,
 } from "./wrongbook-model";
@@ -46,8 +49,8 @@ import {
 } from "./wrongbook-store";
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-const targetChoices = ["考研数学", "公务员考试", "高中课程", "大学课程"];
-const subjectChoices = ["高等数学", "线性代数", "概率论", "行政职业能力测验", "申论", "语文", "英语", "物理", "化学"];
+const targetChoices = ["大学课程", "考研数学", "公务员考试", "高中课程", UNCATEGORIZED];
+const subjectChoices = ["高等数学", "线性代数", "概率论", "行政职业能力测验", "申论", "语文", "英语", "物理", "化学", UNCATEGORIZED];
 
 const icons: Record<LibraryGroup["icon"], ComponentType> = {
   graduate: ArchiveIcon,
@@ -77,6 +80,33 @@ function useWrongbook() {
   const session = useContext(WrongbookContext);
   if (!session) throw new Error("WrongbookContext is missing");
   return session;
+}
+
+function ClassificationField({ field, label, presets, value, onChange, disabled = false }: {
+  field: "target" | "subject";
+  label: string;
+  presets: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const { questions } = useWrongbook();
+  const labelId = useId();
+  const keyboard = useKeyboard();
+  const choices = [...new Set([...presets, ...questions.map((question) => normalizeClassification(question[field]))])];
+  return (
+    <section className="form-section" aria-labelledby={labelId}>
+      <h3 id={labelId}>{label}</h3>
+      <div className="choice-row">
+        {choices.map((choice) => (
+          <button key={choice} type="button" className="choice-chip" aria-pressed={value.trim() === choice} disabled={disabled} onClick={() => onChange(choice)}>{choice}</button>
+        ))}
+      </div>
+      <KeyboardInput className="classification-input" aria-labelledby={labelId} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} onBlur={(event) => {
+        if (!(event.relatedTarget instanceof HTMLInputElement || event.relatedTarget instanceof HTMLTextAreaElement)) keyboard.hide();
+      }} placeholder={`选择或输入${label}`} />
+    </section>
+  );
 }
 
 function StoredImage({ image, alt, className }: { image: Blob; alt: string; className: string }) {
@@ -301,13 +331,15 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
       ...question,
       prompt: prompt.trim(),
       answer: answer.trim(),
-      target,
-      subject,
+      target: normalizeClassification(target),
+      subject: normalizeClassification(subject),
       questionType,
       note: note.trim(),
     };
     try {
       await editQuestion(updated);
+      setTarget(updated.target);
+      setSubject(updated.subject);
       setStatus("已保存");
     } catch {
       setError("保存失败，请重试");
@@ -340,28 +372,8 @@ function QuestionDetail({ question }: { question: StoredQuestion }) {
             setPrompt(event.target.value);
           }} rows={5} />
         </label>
-        <section className="form-section" aria-labelledby="detail-target-label">
-          <h3 id="detail-target-label">考试目标</h3>
-          <div className="choice-row">
-            {targetChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} disabled={controlsDisabled} onClick={() => {
-                clearFeedback();
-                setTarget(choice);
-              }}>{choice}</button>
-            ))}
-          </div>
-        </section>
-        <section className="form-section" aria-labelledby="detail-subject-label">
-          <h3 id="detail-subject-label">科目</h3>
-          <div className="choice-row">
-            {subjectChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} disabled={controlsDisabled} onClick={() => {
-                clearFeedback();
-                setSubject(choice);
-              }}>{choice}</button>
-            ))}
-          </div>
-        </section>
+        <ClassificationField field="target" label="学习目标" presets={targetChoices} value={target} disabled={controlsDisabled} onChange={(value) => { clearFeedback(); setTarget(value); }} />
+        <ClassificationField field="subject" label="科目" presets={subjectChoices} value={subject} disabled={controlsDisabled} onChange={(value) => { clearFeedback(); setSubject(value); }} />
         <section className="form-section" aria-labelledby="detail-question-type-label">
           <h3 id="detail-question-type-label">题型</h3>
           <div className="choice-row">
@@ -434,8 +446,8 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
       id: crypto.randomUUID(),
       prompt: prompt.trim(),
       answer: answer.trim(),
-      target,
-      subject,
+      target: normalizeClassification(target),
+      subject: normalizeClassification(subject),
       questionType,
       note: note.trim(),
       createdAt: new Date().toISOString(),
@@ -443,7 +455,7 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
     };
     try {
       await saveQuestion(question);
-      flow.replace(savedScreen(target, subject));
+      flow.replace(savedScreen(question.target, question.subject));
     } catch {
       setError("保存失败，请重试");
     } finally {
@@ -462,22 +474,8 @@ function ConfirmQuestion({ flow, image, recognizedText, manual, emptyResult }: {
           <span>识别结果</span>
           <KeyboardTextarea aria-label="识别结果" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="输入或修正识别出的题目文字" rows={5} />
         </label>
-        <section className="form-section" aria-labelledby="target-label">
-          <h3 id="target-label">考试目标</h3>
-          <div className="choice-row">
-            {targetChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={target === choice} onClick={() => setTarget(choice)}>{choice}</button>
-            ))}
-          </div>
-        </section>
-        <section className="form-section" aria-labelledby="subject-label">
-          <h3 id="subject-label">科目</h3>
-          <div className="choice-row">
-            {subjectChoices.map((choice) => (
-              <button key={choice} type="button" className="choice-chip" aria-pressed={subject === choice} onClick={() => setSubject(choice)}>{choice}</button>
-            ))}
-          </div>
-        </section>
+        <ClassificationField field="target" label="学习目标" presets={targetChoices} value={target} disabled={saving} onChange={setTarget} />
+        <ClassificationField field="subject" label="科目" presets={subjectChoices} value={subject} disabled={saving} onChange={setSubject} />
         <section className="form-section" aria-labelledby="question-type-label">
           <h3 id="question-type-label">题型</h3>
           <div className="choice-row">
@@ -807,9 +805,9 @@ function HomeView({ flow }: { flow: FlowControls }) {
             {groups.map((group) => {
               const Icon = icons[group.icon];
               return (
-                <button className="library-row" type="button" key={group.id} aria-label={group.title} onClick={() => flow.push(libraryScreen(group))}>
+                <button className="library-row" type="button" key={group.id} aria-label={group.id.startsWith("target:") ? `${group.title}（自定义题库）` : group.title} onClick={() => flow.push(libraryScreen(group))}>
                   <span className="library-icon" aria-hidden="true"><Icon /></span>
-                  <span className="library-copy"><strong>{group.title}</strong></span>
+                  <span className="library-copy"><strong>{group.title}</strong>{group.id.startsWith("target:") ? <small>自定义目标</small> : null}</span>
                   <ChevronRightIcon className="library-chevron" aria-hidden="true" />
                 </button>
               );

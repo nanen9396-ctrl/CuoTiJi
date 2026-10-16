@@ -211,7 +211,7 @@ test("shows the camera-first wrong-question library home", async ({ page }) => {
   await expect(page.getByText("拍照归档错题，按目标与科目整理，高效复习")).toBeVisible();
   await expect(page.getByRole("button", { name: "拍照录入" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "我的题库" })).toBeVisible();
-  for (const title of ["考研数学", "公务员考试", "高中课程", "大学课程", "全部错题"]) {
+  for (const title of ["考研数学", "公务员考试", "高中课程", "大学课程", "待分类", "全部错题"]) {
     await expect(page.getByRole("button", { name: title })).toBeVisible();
   }
 });
@@ -308,6 +308,8 @@ test("locks data management while a new question is awaiting transaction complet
   await page.getByLabel("识别结果").fill("延迟保存题目");
   await page.getByRole("button", { name: "保存错题" }).click();
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "add", "request-success"]);
+  await expect(page.getByRole("textbox", { name: "学习目标", exact: true })).toBeDisabled();
+  await expect(page.getByRole("textbox", { name: "科目", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "返回" }).click();
   await page.getByRole("button", { name: "返回" }).click();
   await page.getByRole("button", { name: "数据管理" }).click();
@@ -630,7 +632,7 @@ test("previews a selected image and opens editable manual entry", async ({ page 
   await expect(page.getByRole("heading", { name: "确认错题" })).toBeVisible();
   await expect(page.getByText("等待手动录入")).toBeVisible();
   await expect(page.getByLabel("识别结果")).toBeEditable();
-  await expect(page.getByText("考试目标")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "学习目标", exact: true })).toBeEditable();
   await expect(page.getByText("正确答案")).toBeVisible();
   await expect(page.getByText("个人笔记")).toBeVisible();
 });
@@ -657,6 +659,8 @@ test("rejects non-image and oversized files before OCR", async ({ page }) => {
 test("saves a wrong question and restores it after reload", async ({ page }) => {
   await openManualEntry(page);
   await page.getByLabel("识别结果").fill("设函数 f(x)=x²，求导数。");
+  await page.getByRole("button", { name: "考研数学", exact: true }).click();
+  await page.getByRole("button", { name: "高等数学", exact: true }).click();
   await page.getByLabel("正确答案").fill("2x");
   await page.getByPlaceholder("记录错误原因或解题提醒").fill("注意幂函数求导公式");
   await page.getByRole("button", { name: "保存错题" }).click();
@@ -855,7 +859,7 @@ test("closes a reopened detail when its delayed delete completes", async ({ page
 });
 
 test("locks editable detail controls until a delayed save is durable", async ({ page }) => {
-  await seedQuestion(page, { id: "slow-save", prompt: "保存前题目" });
+  await seedQuestion(page, { id: "slow-save", prompt: "保存前题目", target: "教师资格证", subject: "教育知识与能力" });
   await page.reload();
   await page.getByRole("button", { name: "全部错题" }).click();
   await page.getByRole("button", { name: /保存前题目/ }).click();
@@ -866,12 +870,12 @@ test("locks editable detail controls until a delayed save is durable", async ({ 
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success"]);
 
   const current = page.getByTestId("flow-current");
-  for (const field of [current.getByLabel("题目文字"), current.getByLabel("正确答案"), current.getByPlaceholder("记录错误原因或解题提醒")]) {
+  for (const field of [current.getByLabel("题目文字"), current.getByLabel("正确答案"), current.getByRole("textbox", { name: "学习目标", exact: true }), current.getByRole("textbox", { name: "科目", exact: true }), current.getByPlaceholder("记录错误原因或解题提醒")]) {
     await expect(field).toBeDisabled();
   }
   const chips = current.locator("button.choice-chip");
-  await expect(chips).toHaveCount(17);
-  for (let index = 0; index < 17; index += 1) await expect(chips.nth(index)).toBeDisabled();
+  await expect(chips).toHaveCount(21);
+  for (let index = 0; index < await chips.count(); index += 1) await expect(chips.nth(index)).toBeDisabled();
   await expect(current.getByRole("button", { name: "处理中…" })).toBeDisabled();
   await expect(current.getByRole("button", { name: "删除错题" })).toBeDisabled();
 
@@ -896,6 +900,8 @@ test("locks and synchronizes a reopened detail during a delayed save", async ({ 
   await installControlledStoreWrite(page);
   await page.getByLabel("题目文字").fill("版本 B");
   await page.getByLabel("正确答案").fill("答案 B");
+  await page.getByRole("textbox", { name: "学习目标", exact: true }).fill("教师资格证");
+  await page.getByRole("textbox", { name: "科目", exact: true }).fill("教育知识与能力");
   await page.getByRole("button", { name: "保存修改" }).click();
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success"]);
   await page.getByRole("button", { name: "返回" }).click();
@@ -904,6 +910,8 @@ test("locks and synchronizes a reopened detail during a delayed save", async ({ 
   const reopened = page.getByTestId("flow-current");
   await expect(reopened.getByLabel("题目文字")).toHaveValue("版本 A");
   await expect(reopened.getByLabel("题目文字")).toBeDisabled();
+  await expect(reopened.getByRole("textbox", { name: "学习目标", exact: true })).toHaveValue("考研数学");
+  await expect(reopened.getByRole("textbox", { name: "科目", exact: true })).toHaveValue("高等数学");
   await expect(reopened.getByRole("button", { name: "线性代数", exact: true })).toBeDisabled();
   await expect(reopened.getByRole("button", { name: "保存修改" })).toBeDisabled();
   await expect(reopened.getByRole("button", { name: "删除错题" })).toBeDisabled();
@@ -912,6 +920,8 @@ test("locks and synchronizes a reopened detail during a delayed save", async ({ 
   await expect.poll(() => controlledStoreEvents(page)).toEqual(["open", "put", "request-success", "transaction-complete", "close"]);
   await expect(reopened.getByLabel("题目文字")).toHaveValue("版本 B");
   await expect(reopened.getByLabel("正确答案")).toHaveValue("答案 B");
+  await expect(reopened.getByRole("textbox", { name: "学习目标", exact: true })).toHaveValue("教师资格证");
+  await expect(reopened.getByRole("textbox", { name: "科目", exact: true })).toHaveValue("教育知识与能力");
   await expect(reopened.getByLabel("题目文字")).toBeEnabled();
   await expect(reopened.getByRole("button", { name: "保存修改" })).toBeEnabled();
   await reopened.getByRole("button", { name: "保存修改" }).click();
@@ -990,7 +1000,7 @@ test("automatically classifies recognized questions and keeps the result editabl
   await page.getByRole("button", { name: "开始识别" }).click();
 
   await expect(page.getByRole("heading", { name: "确认错题" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "考研数学", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("textbox", { name: "学习目标", exact: true })).toHaveValue("待分类");
   await expect(page.getByRole("button", { name: "线性代数", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "证明题", exact: true })).toHaveAttribute("aria-pressed", "true");
 
