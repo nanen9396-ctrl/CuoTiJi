@@ -69,3 +69,10 @@ When any text-entry control loses focus, dismiss the simulated keyboard. If the 
 - Fixed phone chrome should not animate with pushed screens. Screen content can animate; the status bar, camera cutout, and preview chrome should stay put.
 - Keep the keyboard below the home indicator/safe area layer in z-index, and above ordinary app UI while visible.
 - Keep the home indicator as the topmost safe-area layer in the z-index above everything else in the prototype.
+
+## Product Icon Direction
+
+- The approved brand name is “题仓”; the home subtitle is “拍照归档错题，按目标与科目整理，高效复习”.
+- The approved icon source is `docs/superpowers/specs/assets/ticang-icon-approved.png`: a semi-realistic blue book-granary on a clean white background, with warm yellow structural accents and vertical white “题仓” in the dark central doorway.
+- Preserve the book-page doors, restrained wood detail, white background, clear small-size silhouette, and professional learning-tool tone.
+- Do not add a camera, English subtitle, graduation cap, formulas, wheat, people, animals, landscape, or unrelated decoration.

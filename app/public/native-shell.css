@@ -1,0 +1,44 @@
+html[data-native-shell="true"] .device-menu-bar,
+html[data-native-shell="true"] .phone-bezel,
+html[data-native-shell="true"] .device-camera,
+html[data-native-shell="true"] .status-bar,
+html[data-native-shell="true"] .home-indicator,
+html[data-native-shell="true"] .keyboard-dock,
+html[data-native-shell="true"] .mobile-cursor {
+  display: none !important;
+}
+
+html[data-native-shell="true"] .phone-stage {
+  display: block;
+  padding: 0;
+}
+
+html[data-native-shell="true"] .phone-scale-box,
+html[data-native-shell="true"] .phone-device,
+html[data-native-shell="true"] .device-screen {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+html[data-native-shell="true"] .phone-device,
+html[data-native-shell="true"] .device-screen {
+  inset: 0 !important;
+  transform: none !important;
+  border-radius: 0 !important;
+}
+
+html[data-native-shell="true"] .device-screen,
+html[data-native-shell="true"] .device-screen * {
+  cursor: auto !important;
+}
+
+html[data-native-shell="true"] .flow-stack {
+  --flow-header-height: calc(var(--flow-header-content-height) + var(--safe-area-inset-top, env(safe-area-inset-top, 0px))) !important;
+  --flow-header-safe-area: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)) !important;
+  --keyboard-height: 0px !important;
+}
+
+html[data-native-shell="true"] .mobile-page {
+  --mobile-safe-area-height: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)) !important;
+  --keyboard-height: 0px !important;
+}
