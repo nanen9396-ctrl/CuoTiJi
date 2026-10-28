@@ -3,3 +3,5 @@ dist/
 test-results/
 playwright-report/
 preview.*.log
+public/ocr/
+.ocr-tesseract-patch/

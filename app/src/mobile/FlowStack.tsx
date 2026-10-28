@@ -5,14 +5,18 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { App } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useDrag } from "@use-gesture/react";
 import { useMobileDevice } from "./Device";
 import { useKeyboard, useKeyboardDismissDrag, useKeyboardInsets } from "./Keyboard";
+import { installAndroidBackHandler } from "./native-back";
 
 export type FlowScreen = {
   id: string;
@@ -63,6 +67,8 @@ export function FlowStack({ initial }: { initial: FlowScreen }) {
   const gestureStartedAtEdge = useRef(false);
   const initialEntry = useRef<FlowEntry>({ ...initial, key: `${initial.id}-0` });
   const [stack, setStack] = useState<FlowEntry[]>(() => [initialEntry.current]);
+  const stackRef = useRef(stack);
+  stackRef.current = stack;
   const [direction, setDirection] = useState(1);
   const [swipeX, setSwipeX] = useState(0);
 
@@ -80,6 +86,19 @@ export function FlowStack({ initial }: { initial: FlowScreen }) {
       return currentStack.slice(0, -1);
     });
   }, [keyboard]);
+
+  useEffect(() => {
+    const removeBackHandler = installAndroidBackHandler({
+      app: App,
+      platform: Capacitor.getPlatform(),
+      canPop: () => stackRef.current.length > 1,
+      pop,
+    });
+
+    return () => {
+      void removeBackHandler();
+    };
+  }, [pop]);
 
   const controls = useMemo<FlowControls>(() => {
     const current = stack[stack.length - 1];

@@ -14,7 +14,7 @@ export default defineConfig({
     viewport: { width: 1100, height: 1100 },
   },
   webServer: {
-    command: `${nodeExecutable} ./node_modules/vite/bin/vite.js preview --host 127.0.0.1 --port 4173`,
+    command: `${nodeExecutable} ./node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173`,
     url: previewUrl,
     reuseExistingServer: true,
   },

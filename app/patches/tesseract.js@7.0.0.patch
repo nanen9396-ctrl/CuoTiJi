@@ -1,0 +1,18 @@
+diff --git a/src/createWorker.js b/src/createWorker.js
+index 89b53b89b27f6579155ed2a0ef372fa8c2a8b8e6..cff5d2e3abecda1804dd93730a9e6d6aa8fdeac2 100644
+--- a/src/createWorker.js
++++ b/src/createWorker.js
+@@ -44 +44,5 @@ module.exports = async (langs = 'eng', oem = OEM.LSTM_ONLY, _options = {}, confi
+-  const workerError = (event) => { workerResReject(event.message); };
++  // 题仓 patch: a worker startup error must release resources and settle initialization.
++  const workerError = (event) => {
++    void terminate();
++    workerResReject(event.message);
++  };
+@@ -243 +247,5 @@ module.exports = async (langs = 'eng', oem = OEM.LSTM_ONLY, _options = {}, confi
+-    .catch(() => {});
++    // 题仓 patch: propagate language/API initialization failures instead of waiting forever.
++    .catch((error) => {
++      void terminate();
++      workerResReject(error);
++    });
