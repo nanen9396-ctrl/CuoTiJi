@@ -27,6 +27,18 @@ test("round-trips every question field and original image", async () => {
   assert.deepEqual(new Uint8Array(await restored.image.arrayBuffer()), Uint8Array.from([137, 80, 78, 71]));
 });
 
+test("round-trips multi-megabyte image bytes with every Base64 padding length", async () => {
+  for (const extraBytes of [0, 1, 2]) {
+    const bytes = Uint8Array.from({ length: 4 * 1024 * 1024 + extraBytes }, (_, index) => index % 256);
+    const original = { ...question, image: new Blob([bytes], { type: "image/jpeg" }) };
+    const encoded = await backup.createBackupBlob([original]);
+    const [restored] = await backup.parseBackupFile(encoded);
+
+    assert.equal(restored.image.type, original.image.type);
+    assert.deepEqual(new Uint8Array(await restored.image.arrayBuffer()), bytes);
+  }
+});
+
 test("preserves custom, unclassified, and legacy classifications with original images", async () => {
   const questions = [
     ["教师资格证", "教育知识与能力"],
@@ -98,6 +110,22 @@ test("rejects invalid image MIME types and Base64", async () => {
   await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "text/plain", base64: "aGVsbG8=" })), /图片类型无效/);
   await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "image/png", base64: "not base64" })), /图片数据无效/);
   await assert.rejects(() => backup.parseBackupFile(makeFile({ type: "image/png", base64: "" })), /图片数据无效/);
+});
+
+test("rejects malformed Base64 padding and whitespace including trailing line terminators", async () => {
+  for (const base64 of [
+    "A", "AA", "AAA", "A===", "AA=A", "AAAA=", "AAAA====", "AA==AAAA", "____",
+    "AAA ", "AA\tA", "AAAA\n", "AAAA\r", "AAAA\r\n", "AAA\n", "AAA\r", "AA\r\n",
+    "AAA\u2028", "AAA\u2029",
+  ]) {
+    const file = new Blob([JSON.stringify({
+      format: "ticang",
+      version: 1,
+      exportedAt: question.createdAt,
+      questions: [{ ...question, image: { type: "image/png", base64 } }],
+    })]);
+    await assert.rejects(() => backup.parseBackupFile(file), /图片数据无效/, JSON.stringify(base64));
+  }
 });
 
 test("rejects files and exports over 100 MB before reading image bytes", async () => {

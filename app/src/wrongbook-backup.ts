@@ -15,7 +15,7 @@ type BackupDocument = {
 };
 
 const acceptedBackupFormats = new Set(["ticang", "cuotiji"]);
-const base64Pattern = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const invalidBase64Pattern = /[^A-Za-z0-9+/]/;
 
 function fail(message: string): never {
   throw new Error(message);
@@ -42,7 +42,9 @@ async function blobToBase64(blob: Blob): Promise<string> {
 
 function base64ToBlob(type: string, value: string): Blob {
   if (!type.startsWith("image/")) fail("备份中的图片类型无效");
-  if (!value || !base64Pattern.test(value)) fail("备份中的图片数据无效");
+  if (!value || value.length % 4 !== 0 || invalidBase64Pattern.test(value.replace(/={1,2}$/, ""))) {
+    fail("备份中的图片数据无效");
+  }
   let binary: string;
   try {
     binary = atob(value);
